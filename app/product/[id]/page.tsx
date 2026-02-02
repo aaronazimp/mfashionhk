@@ -12,6 +12,13 @@ import { Product } from "@/lib/products";
 import { supabase } from "@/lib/supabase";
 import { MessageCircle, ChevronLeft, ChevronRight, ArrowLeft, Loader2 } from "lucide-react";
 
+interface SizeMeasurement {
+  chest?: string;
+  waist?: string;
+  hip?: string;
+  length?: string;
+}
+
 export default function ProductDetailPage({
   params,
 }: {
@@ -25,6 +32,7 @@ export default function ProductDetailPage({
   const [selectedColor, setSelectedColor] = useState(0);
   const [selectedSize, setSelectedSize] = useState(0);
   const [currentUrl, setCurrentUrl] = useState("");
+  const [sizeMeasurements, setSizeMeasurements] = useState<Record<string, SizeMeasurement>>({});
 
   useEffect(() => {
     setCurrentUrl(window.location.href);
@@ -39,7 +47,11 @@ export default function ProductDetailPage({
           *,
           SKU_variations (
             color,
-            size
+            size,
+            hip,
+            waist,
+            length,
+            chest
           ),
           SKU_images (
             imageurl,
@@ -59,6 +71,20 @@ export default function ProductDetailPage({
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const uniqueSizes = Array.from(new Set(variations.map((v: any) => v.size).filter(Boolean))) as string[];
           
+          const measurements: Record<string, SizeMeasurement> = {};
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          variations.forEach((v: any) => {
+            if (v.size && !measurements[v.size]) {
+              measurements[v.size] = {
+                chest: v.chest,
+                waist: v.waist,
+                hip: v.hip,
+                length: v.length
+              };
+            }
+          });
+          setSizeMeasurements(measurements);
+
           const images = data.SKU_images
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             ?.sort((a: any, b: any) => (a.imageIndex || 0) - (b.imageIndex || 0))
@@ -122,6 +148,9 @@ export default function ProductDetailPage({
       prev === 0 ? product.images.length - 1 : prev - 1
     );
   };
+
+  const currentSizeName = product.sizes[selectedSize];
+  const currentMeasurements = sizeMeasurements[currentSizeName];
 
   return (
     <div className="min-h-screen bg-white">
@@ -314,7 +343,7 @@ export default function ProductDetailPage({
               <h3 className="text-sm font-medium text-foreground mb-3">
                 尺寸：{product.sizes[selectedSize]}
               </h3>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 mb-3">
                 {product.sizes.map((size, index) => (
                   <button
                     key={size}
@@ -329,6 +358,39 @@ export default function ProductDetailPage({
                   </button>
                 ))}
               </div>
+
+               {/* Measurements Display */}
+               {currentMeasurements && (
+                <div className="bg-muted/50 rounded-lg p-4 text-sm mt-3">
+                  <h4 className="font-medium text-foreground mb-2">尺寸詳情 (cm):</h4>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                    {currentMeasurements.chest && (
+                       <div className="flex justify-between">
+                         <span className="text-muted-foreground">胸圍:</span>
+                         <span className="font-medium">{currentMeasurements.chest}</span>
+                       </div>
+                    )}
+                    {currentMeasurements.waist && (
+                       <div className="flex justify-between">
+                         <span className="text-muted-foreground">腰圍:</span>
+                         <span className="font-medium">{currentMeasurements.waist}</span>
+                       </div>
+                    )}
+                    {currentMeasurements.hip && (
+                       <div className="flex justify-between">
+                         <span className="text-muted-foreground">臀圍:</span>
+                         <span className="font-medium">{currentMeasurements.hip}</span>
+                       </div>
+                    )}
+                    {currentMeasurements.length && (
+                       <div className="flex justify-between">
+                         <span className="text-muted-foreground">衣長:</span>
+                         <span className="font-medium">{currentMeasurements.length}</span>
+                       </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
           </div>

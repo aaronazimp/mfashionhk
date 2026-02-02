@@ -131,6 +131,7 @@ export default function OrderModal({ open, onOpenChange, sku, initialItems, prod
   const [currentBatchIndex, setCurrentBatchIndex] = useState(0)
   const [batchAction, setBatchAction] = useState<ActionType>('confirm')
   const [messageTemplate, setMessageTemplate] = useState("")
+  const listRef = React.useRef<HTMLDivElement>(null)
 
   // Initial Setup
   useEffect(() => {
@@ -334,7 +335,7 @@ export default function OrderModal({ open, onOpenChange, sku, initialItems, prod
 
   // --- Renders ---
 
-  const RenderBatchMode = () => {
+  const renderBatchMode = () => {
     const currentItem = batchQueue[currentBatchIndex]
     if (!currentItem) return null // Should show completion screen logically
 
@@ -342,9 +343,9 @@ export default function OrderModal({ open, onOpenChange, sku, initialItems, prod
         <div className="flex flex-col h-full bg-gray-50 p-6 items-center justify-center min-h-[500px]">
             <div className="w-full max-w-md bg-white rounded-xl border border-gray-200 shadow-xl p-6 space-y-6">
                  <div className="space-y-2 text-center">
-                    <h3 className="text-gray-500 text-sm uppercase tracking-wider font-semibold">Batch Processing</h3>
+                    <h3 className="text-gray-500 text-sm uppercase tracking-wider font-semibold">批量處理中</h3>
                     <Progress value={((currentBatchIndex) / batchQueue.length) * 100} className="h-2" />
-                    <p className="text-xs text-gray-400">{currentBatchIndex + 1} of {batchQueue.length}</p>
+                    <p className="text-xs text-gray-400">{currentBatchIndex + 1} / {batchQueue.length}</p>
                  </div>
 
                  <div className="py-4 border-y border-gray-100 text-center space-y-2">
@@ -360,20 +361,37 @@ export default function OrderModal({ open, onOpenChange, sku, initialItems, prod
                        onClick={processCurrentAndNext}
                     >
                        <Send className="w-5 h-5 mr-2" />
-                       Send & Next (Space)
+                       發送並跳轉 (Space)
                     </Button>
-                    <Button variant="ghost" className="w-full" onClick={() => setCurrentBatchIndex(prev => prev + 1)}>Skip</Button>
+                    <Button variant="ghost" className="w-full" onClick={() => setCurrentBatchIndex(prev => prev + 1)}>跳過</Button>
                  </div>
-                 <Button variant="link" className="w-full text-xs text-gray-400" onClick={() => setBatchMode(false)}>Exit Batch Mode</Button>
+                 <Button variant="link" className="w-full text-xs text-gray-400" onClick={() => setBatchMode(false)}>退出批量模式</Button>
             </div>
         </div>
     )
   }
 
-  const RenderOrderList = () => (
-      <div className={isMobile ? 'h-full overflow-y-auto pb-32 px-3' : 'h-full overflow-y-auto pb-24 px-1 space-y-4'}>
+  const renderOrderList = () => (
+      <div ref={listRef} className={isMobile ? 'h-full overflow-y-auto pb-32 px-3' : 'h-full overflow-y-auto pb-24 px-1 space-y-4'}>
+        {filteredItems.length > 0 && selectedIds.size < filteredItems.length && (
+            <div className="sticky top-0 z-10 bg-gray-50/95 py-2 px-1 backdrop-blur-sm flex justify-end border-b border-gray-200/50 mb-2">
+                <Button 
+                    size="sm" 
+                    variant="outline"
+                    className="h-8 bg-white border-gray-200 text-gray-700 hover:bg-gray-100 shadow-sm"
+                    onClick={() => {
+                        const all = filteredItems.map(i => i.id)
+                        setSelectedIds(new Set(all))
+                        listRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+                    }}
+                >
+                    <CheckCircle2 className="w-3.5 h-3.5 mr-1.5 text-gray-500" />
+                    批量處理 ({filteredItems.length})
+                </Button>
+            </div>
+        )}
         {Object.entries(itemsByVariation).length === 0 ? (
-           <div className="flex h-40 items-center justify-center text-gray-400">No orders found</div>
+           <div className="flex h-40 items-center justify-center text-gray-400">沒有相關訂單</div>
         ) : Object.entries(itemsByVariation).map(([variation, rawIts]) => {
           // Sort logic: Action Needed (Paid) > Unpaid > Queue > Done
           const its = [...rawIts].sort((a, b) => (statusPriority[a.status] || 99) - (statusPriority[b.status] || 99))
@@ -517,7 +535,7 @@ export default function OrderModal({ open, onOpenChange, sku, initialItems, prod
       </div>
   )
 
-  const content = batchMode ? <RenderBatchMode /> : (
+  const content = batchMode ? renderBatchMode() : (
     <div className="flex flex-col h-full bg-white">
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
         <div className="px-4 pt-2">
@@ -539,23 +557,34 @@ export default function OrderModal({ open, onOpenChange, sku, initialItems, prod
                 </TabsTrigger>
             </TabsList>
         </div>
-        <TabsContent value="paid" className="flex-1 min-h-0 mt-2"><RenderOrderList /></TabsContent>
-        <TabsContent value="confirmed" className="flex-1 min-h-0 mt-2"><RenderOrderList /></TabsContent>
-        <TabsContent value="waitlist" className="flex-1 min-h-0 mt-2"><RenderOrderList /></TabsContent>
-        <TabsContent value="completed" className="flex-1 min-h-0 mt-2"><RenderOrderList /></TabsContent>
+        <TabsContent value="paid" className="flex-1 min-h-0 mt-2">{renderOrderList()}</TabsContent>
+        <TabsContent value="confirmed" className="flex-1 min-h-0 mt-2">{renderOrderList()}</TabsContent>
+        <TabsContent value="waitlist" className="flex-1 min-h-0 mt-2">{renderOrderList()}</TabsContent>
+        <TabsContent value="completed" className="flex-1 min-h-0 mt-2">{renderOrderList()}</TabsContent>
       </Tabs>
 
       {/* Floating Bulk Action Bar */}
       {selectedIds.size > 0 && (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-[95%] max-w-md bg-gray-900 text-white shadow-2xl rounded-2xl p-3 flex items-center justify-between z-50 animate-in slide-in-from-bottom-4">
             <div className="flex items-center gap-3">
-                <div className="bg-gray-700 text-xs px-2 py-1 rounded-md font-mono">{selectedIds.size} selected</div>
-                <Button size="sm" variant="ghost" className="h-6 text-xs text-gray-400 hover:text-white" onClick={() => setSelectedIds(new Set())}>Cancel</Button>
+                <div className="bg-gray-700 text-xs px-2 py-1 rounded-md font-mono">已選 {selectedIds.size} 筆</div>
+                <Button size="sm" variant="ghost" className="h-6 text-xs text-gray-400 hover:text-white" onClick={() => setSelectedIds(new Set())}>取消</Button>
             </div>
             <div className="flex items-center gap-2">
-                 <Button size="sm" variant="destructive" className="h-8 text-xs" onClick={() => startBatchProcess('out-of-stock')}>缺貨</Button>
-                 <Button size="sm" className="h-8 text-xs bg-green-600 hover:bg-green-500" onClick={() => startBatchProcess('confirm')}>確認</Button>
-                 {/* Optional: Add Bulk Verify if needed */}
+                 {/* Cancel / Out of Stock */}
+                 {activeTab !== 'completed' && (
+                     <Button size="sm" variant="destructive" className="h-8 text-xs" onClick={() => startBatchProcess('out-of-stock')}>缺貨</Button>
+                 )}
+
+                 {/* Confirm Availability (Waitlist) */}
+                 {(activeTab === 'waitlist' || activeTab === 'all') && (
+                     <Button size="sm" className="h-8 text-xs bg-green-600 hover:bg-green-500" onClick={() => startBatchProcess('confirm')}>確認</Button>
+                 )}
+
+                 {/* Verify Payment (Paid) */}
+                 {activeTab === 'paid' && (
+                     <Button size="sm" className="h-8 text-xs bg-blue-600 hover:bg-blue-500" onClick={() => startBatchProcess('verify')}>核對</Button>
+                 )}
             </div>
         </div>
       )}

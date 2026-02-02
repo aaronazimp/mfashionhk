@@ -1,14 +1,24 @@
 "use client";
 
-import React from "react";
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, XIcon } from 'lucide-react';
+import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, XIcon, Volume2, VolumeX } from 'lucide-react';
 import { Input } from "@/components/ui/input";
 import { Toaster } from '@/components/ui/toaster'
 import { useToast } from '@/hooks/use-toast'
+import { ToastAction } from "@/components/ui/toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { groupAndSortRegistrations, type Registration, mapSupabaseOrderToRegistration } from "@/lib/orders";
 import Image from "next/image";
 import { products } from "@/lib/products";
@@ -26,6 +36,12 @@ export default function OrdersPage() {
   const [totalCount, setTotalCount] = useState<number>(0);
   const ITEMS_PER_PAGE = 10;
   
+  const [showAudioConsent, setShowAudioConsent] = useState(true);
+  const [audioEnabled, setAudioEnabled] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Cash register "Ka-Ching" sound
+  const NOTIFICATION_SOUND = "https://www.myinstants.com/media/sounds/ka-ching.mp3";
+
   const { toast: pushToast } = useToast();
   const wakeLockRef = React.useRef<any>(null);
 
@@ -251,10 +267,10 @@ export default function OrdersPage() {
     });
   };
 
-  const toggleExpand = (sku: string) => {
+  const toggleExpand = useCallback((sku: string) => {
     setSelectedSku(sku);
     setModalOpen(true);
-  };
+  }, []);
 
   const collapseAll = () => {
     // close modal / deselect SKU
@@ -262,32 +278,76 @@ export default function OrdersPage() {
     setSelectedSku(null);
   };
 
-  // Live notification listener (will be hooked to Supabase realtime later)
+  // Live notification listener
   useEffect(() => {
-    const handler = (e: any) => {
-      // expected event shape: { sku, customerName, variation }
-      const payload = e?.detail ?? e?.data ?? e;
-      if (!payload) return;
-      pushToast({
-        title: '新預約',
-        description: `${payload.customerName ?? '有人'} 已預約 ${payload.sku ?? ''} ${payload.variation ?? ''}`,
-        open: true,
-      });
-    };
+    const channel = supabase
+      .channel('reels_orders_realtime')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'reels_orders' },
+        async (payload) => {
+          // 1. Play Sound
+          if (audioEnabled && audioRef.current) {
+             audioRef.current.currentTime = 0;
+             audioRef.current.play().catch(e => console.error("Audio play failed", e));
+          }
 
-    window.addEventListener('sku:reserved', handler as EventListener);
+          const partialData = payload.new;
+          
+          // 2. Fetch full data to ensure we have joined tables (SKU_details etc)
+          let newReg: Registration;
+          const { data: fullData } = await supabase
+            .from('reels_orders')
+            .select(`
+                *,
+                SKU_details (
+                    SKU_date,
+                    reels_deadline,
+                    SKU_images (
+                        imageurl,
+                        imageIndex
+                    )
+                )
+            `)
+            .eq('id', partialData.id)
+            .single();
+            
+          if (fullData) {
+              newReg = mapSupabaseOrderToRegistration(fullData);
+          } else {
+             // Fallback
+             newReg = mapSupabaseOrderToRegistration(partialData);
+          }
 
-    // For convenience during development allow postMessage
-    const pm = (ev: MessageEvent) => {
-      if (ev.data && ev.data.type === 'sku:reserved') handler(ev.data.payload);
-    };
-    window.addEventListener('message', pm);
+           // 3. Show Toast
+           const sku = newReg.sku || '未知商品';
+           const cust = newReg.customerName || '顧客';
+
+           pushToast({
+             title: `🔥 來自${cust}的新訂單`,
+             description: `${sku} - ${newReg.variation ?? ''}`,
+             duration: Infinity, 
+             action: (
+               <ToastAction altText="View" onClick={() => toggleExpand(sku)}>
+                 查看
+               </ToastAction>
+             )
+          });
+
+          // 4. Update State
+          setRegistrations((prev) => {
+             // Avoid duplicates if multiple inserts happen quickly or optimistic updates clash
+             if (prev.find(p => p.id === newReg.id)) return prev;
+             return [newReg, ...prev];
+          });
+        }
+      )
+      .subscribe();
 
     return () => {
-      window.removeEventListener('sku:reserved', handler as EventListener);
-      window.removeEventListener('message', pm);
+      supabase.removeChannel(channel);
     };
-  }, [pushToast]);
+  }, [audioEnabled, pushToast, toggleExpand]);
 
   return (
     <div className="min-h-screen bg-gray-50/50 text-[#111827]">
@@ -301,6 +361,16 @@ export default function OrdersPage() {
             <Link href="/admin/skus" className="flex-1 md:flex-initial px-2 md:px-4 py-2 md:py-2 rounded text-xs md:text-sm text-[#111827] text-center md:text-left hover:bg-white/50 transition-colors">管理 SKUs</Link>
             <Link href="/admin/best-sellers" className="flex-1 md:flex-initial px-2 md:px-4 py-2 md:py-2 rounded text-xs md:text-sm text-[#111827] text-center md:text-left hover:bg-white/50 transition-colors">熱賣 SKU</Link>
           </nav>
+          
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setShowAudioConsent(true)}
+            className="hidden md:flex text-gray-500 hover:text-gray-900 ml-4"
+            title={audioEnabled ? "音效已開啟" : "音效已關閉"}
+          >
+            {audioEnabled ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
+          </Button>
         </div>
       </header>
 
@@ -565,6 +635,36 @@ export default function OrdersPage() {
             </div>
           </div>
         )}
+
+        <audio ref={audioRef} src={NOTIFICATION_SOUND} preload="auto" onError={(e) => console.error("Audio Load Error:", e.currentTarget.error)} />
+
+        <AlertDialog open={showAudioConsent} onOpenChange={setShowAudioConsent}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>啟用即時通知音效 (Enable Audio)</AlertDialogTitle>
+              <AlertDialogDescription>
+                系統需要您的許可才能在收到新訂單時播放提示音。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setAudioEnabled(false)}>保持靜音</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (audioRef.current) {
+                    audioRef.current.play().then(() => {
+                        audioRef.current?.pause();
+                        audioRef.current!.currentTime = 0;
+                    }).catch(console.error);
+                  }
+                  setAudioEnabled(true);
+                  setShowAudioConsent(false);
+                }}
+              >
+                開啟音效 (Enable)
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   );
