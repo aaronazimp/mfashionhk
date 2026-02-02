@@ -1,0 +1,152 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+/* M+ Fashion Brand Theme */
+/* Primary: #A87C73 (dusty rose), Background: #FFF4E5 (warm cream), Text: #5F6061 */
+
+:root {
+  --background: #FFF4E5;
+  --foreground: #5F6061;
+  --card: #FFFFFF;
+  --card-foreground: #5F6061;
+  --popover: #FFFFFF;
+  --popover-foreground: #5F6061;
+  --primary: #A87C73;
+  --primary-foreground: #FFFFFF;
+  --secondary: #F5E6D3;
+  --secondary-foreground: #5F6061;
+  --muted: #F0E4D8;
+  --muted-foreground: #8A8B8C;
+  --accent: #A87C73;
+  --accent-foreground: #FFFFFF;
+  --destructive: #DC3545;
+  --destructive-foreground: #FFFFFF;
+  --border: #E8DCD0;
+  --input: #E8DCD0;
+  --ring: #A87C73;
+  --chart-1: #A87C73;
+  --chart-2: #C4A59D;
+  --chart-3: #5F6061;
+  --chart-4: #8A8B8C;
+  --chart-5: #D4B5AD;
+  --radius: 0.5rem;
+  --sidebar: #FFFFFF;
+  --sidebar-foreground: #5F6061;
+  --sidebar-primary: #A87C73;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #F5E6D3;
+  --sidebar-accent-foreground: #5F6061;
+  --sidebar-border: #E8DCD0;
+  --sidebar-ring: #A87C73;
+  
+  /* Custom colors for admin dashboard */
+  --success: #28A745;
+  --success-foreground: #FFFFFF;
+  --info: #3B82F6;
+  --info-foreground: #FFFFFF;
+  --warning: #F59E0B;
+  --warning-foreground: #FFFFFF;
+}
+
+/* Dark mode for Eva Admin Dashboard */
+.dark {
+  --background: #1A1A1A;
+  --foreground: #F5F5F5;
+  --card: #252525;
+  --card-foreground: #F5F5F5;
+  --popover: #252525;
+  --popover-foreground: #F5F5F5;
+  --primary: #C4A59D;
+  --primary-foreground: #1A1A1A;
+  --secondary: #333333;
+  --secondary-foreground: #F5F5F5;
+  --muted: #333333;
+  --muted-foreground: #A0A0A0;
+  --accent: #C4A59D;
+  --accent-foreground: #1A1A1A;
+  --destructive: #EF4444;
+  --destructive-foreground: #FFFFFF;
+  --border: #404040;
+  --input: #404040;
+  --ring: #C4A59D;
+  --chart-1: #C4A59D;
+  --chart-2: #A87C73;
+  --chart-3: #F5F5F5;
+  --chart-4: #A0A0A0;
+  --chart-5: #D4B5AD;
+  --sidebar: #1F1F1F;
+  --sidebar-foreground: #F5F5F5;
+  --sidebar-primary: #C4A59D;
+  --sidebar-primary-foreground: #1A1A1A;
+  --sidebar-accent: #333333;
+  --sidebar-accent-foreground: #F5F5F5;
+  --sidebar-border: #404040;
+  --sidebar-ring: #C4A59D;
+  
+  --success: #22C55E;
+  --success-foreground: #FFFFFF;
+  --info: #3B82F6;
+  --info-foreground: #FFFFFF;
+  --warning: #F59E0B;
+  --warning-foreground: #FFFFFF;
+}
+
+@theme inline {
+  --font-sans: 'Merriweather', 'Georgia', serif;
+  --font-serif: 'Merriweather', 'Georgia', serif;
+  --font-mono: 'Geist Mono', 'Geist Mono Fallback';
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
