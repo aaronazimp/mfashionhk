@@ -30,7 +30,7 @@ export function ProductCard({ product }: ProductCardProps) {
     setCurrentUrl(`${window.location.origin}/product/${product.id}`);
   }, [product.id]);
 
-  const whatsappLink = `https://wa.me/85212345678?text=${encodeURIComponent(
+  const whatsappLink = `https://wa.me/85257290882?text=${encodeURIComponent(
     `您好，我想諮詢以下商品：\n${currentUrl}`
   )}`;
 
