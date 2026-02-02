@@ -15,21 +15,18 @@ export const metadata: Metadata = {
   description: '探索 M+ Fashion 的最新時尚精品系列',
   generator: 'v0.app',
   icons: {
-    icon: [
+    icon: '/m+logo_final_colorBG.png',
+    apple: '/m+logo_final_colorBG.png',
+  },
+  openGraph: {
+    images: [
       {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
+        url: '/m+logo_final_colorBG.png',
+        width: 1200,
+        height: 630,
+        alt: 'M+ Fashion',
       },
     ],
-    apple: '/apple-icon.png',
   },
 }
 

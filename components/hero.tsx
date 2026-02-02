@@ -1,15 +1,25 @@
 import Link from "next/link";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Zap } from "lucide-react";
 
 export function Hero() {
   return (
-    <section className="relative min-h-[70vh] flex items-center justify-center overflow-hidden">
+    <section className="relative min-h-[100vh] flex items-center justify-center overflow-hidden">
       {/* Background Pattern */}
       <div className="absolute inset-0 bg-gradient-to-b from-background to-secondary/30" />
       
       <div className="container mx-auto px-4 relative z-10">
         <div className="max-w-3xl mx-auto text-center">
+          <div className="flex justify-center mb-8">
+            <Image
+              src="/m+logo_final_colorBG.png"
+              alt="M+ Fashion Logo"
+              width={180}
+              height={180}
+              priority
+            />
+          </div>
           <h1 className="text-4xl md:text-6xl font-bold text-foreground mb-6 leading-tight text-balance">
             優雅時尚
             <br />
