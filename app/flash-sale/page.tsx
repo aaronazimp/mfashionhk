@@ -1,6 +1,4 @@
-import dynamic from 'next/dynamic'
-
-const FlashSaleClient = dynamic(() => import('./FlashSaleClient'), { ssr: false })
+import FlashSaleClient from './FlashSaleClient'
 
 export default function Page() {
   return <FlashSaleClient />
