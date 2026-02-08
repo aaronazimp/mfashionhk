@@ -14,31 +14,21 @@ export async function registerReelsOrder(formData: FormData) {
   const rawVariationId = formData.get('variationId')
   const variationId = rawVariationId ? parseInt(rawVariationId as string) : 0
   
-  const skuSnapshot = formData.get('skuSnapshot') as string
-  const variationSnapshot = formData.get('variationSnapshot') as string
-  
-  const rawPrice = formData.get('price')
-  const price = rawPrice ? parseFloat(rawPrice as string) : 0
-
   // Optional: Add server-side validation here
-  if (!name || !whatsapp || !skuId) {
+  if (!name || !whatsapp || !skuId || !variationId) {
     return { error: 'Missing required fields' }
   }
 
   // Use the admin client if RLS policies restrict creation, 
   // but here we likely rely on the RPC function to handle logic. 
   // IMPORTANT: Ensure the RPC is accessible to the role used by this client (anon or service_role).
-  // Assuming 'create_reels_order_with_quota' is accessible to anon/authenticated.
   
   const { data, error } = await supabase.rpc('create_reels_order_with_quota', {
     p_customer_name: name,
     p_whatsapp: whatsapp,
     p_email: email,
     p_sku_id: skuId,
-    p_variation_id: variationId,
-    p_sku_snapshot: skuSnapshot,
-    p_variation_snapshot: variationSnapshot,
-    p_price: price
+    p_variation_id: variationId
   })
 
   if (error) {

@@ -3,13 +3,16 @@
 import React, { useState, useEffect } from "react";
 import { ImmersiveFeed } from "@/components/immersive-feed";
 import { Product } from "@/lib/products";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import ProductModal from "@/components/ProductModal";
 
 export default function FlashSalePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [modalId, setModalId] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     async function fetchProducts() {
@@ -61,11 +64,17 @@ export default function FlashSalePage() {
     fetchProducts();
   }, []);
 
+  // Open product modal and update URL so deep links work
   const handleRegister = (product: any) => {
-    console.log("Registering for product:", product);
-    // Navigate to flash sale detail page
-    router.push(`/flash-sale/${product.id}`);
+    setModalId(product.id);
+    router.push(`/flash-sale?modal=${product.id}`);
   };
+
+  // Read deep-link ?modal= on mount / when search params change
+  useEffect(() => {
+    const modal = searchParams?.get?.('modal');
+    if (modal) setModalId(modal);
+  }, [searchParams]);
 
   if (loading) {
     return (
@@ -82,6 +91,12 @@ export default function FlashSalePage() {
             products={products} 
             onRegister={handleRegister} 
         />
+        {modalId && (
+          <ProductModal id={modalId} open={true} onClose={() => {
+            setModalId(undefined);
+            router.push('/flash-sale');
+          }} />
+        )}
     </main>
   );
 }

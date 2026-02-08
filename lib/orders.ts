@@ -1,5 +1,6 @@
 export type Registration = {
   id: string;
+  orderNumber: string;
   sku: string;
   skuId?: string;
   customerName: string;
@@ -12,6 +13,7 @@ export type Registration = {
   skuDate?: string;
   paymentProofUrl?: string;
   reelsDeadline?: string;
+  price?: number;
 };
 
 // Helper to map DB response to Registration type
@@ -38,6 +40,7 @@ export function mapSupabaseOrderToRegistration(order: any): Registration {
 
   return {
     id: order.id,
+    orderNumber: order.order_number || order.id.slice(0, 8).toUpperCase(),
     sku: order.sku_code_snapshot || "Unknown",
     skuId: order.sku_id,
     customerName: order.customer_name,
@@ -49,6 +52,7 @@ export function mapSupabaseOrderToRegistration(order: any): Registration {
     skuDate: details?.SKU_date || "",
     reelsDeadline: details?.reels_deadline || undefined,
     paymentProofUrl: order.payment_proof_url || (status === 'paid' ? "https://placehold.co/100x100?text=Proof" : undefined),
+    price: order.price,
   };
 }
 
@@ -73,7 +77,14 @@ export function groupAndSortRegistrations(
     }
 
     if (searchSku.trim()) {
-      return r.sku.toLowerCase().includes(searchSku.trim().toLowerCase());
+      const term = searchSku.trim().toLowerCase();
+      // Expanded Search Scope
+      return (
+        r.sku.toLowerCase().includes(term) ||
+        (r.customerName && r.customerName.toLowerCase().includes(term)) ||
+        (r.whatsapp && r.whatsapp.includes(term)) ||
+        (r.orderNumber && r.orderNumber.toLowerCase().includes(term))
+      );
     }
 
     return true;

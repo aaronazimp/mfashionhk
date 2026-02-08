@@ -64,7 +64,9 @@ export default function OrdersPage() {
         .from('reels_orders')
         .select(`
           *,
+          price,
           SKU_details (
+            regular_price,
             SKU_date,
             reels_deadline,
             SKU_images (
@@ -182,36 +184,11 @@ export default function OrdersPage() {
   
   const groups = filteredGroups;
 
-  // Small component to display live time-left until cutoff (cutoff = latest + 1 hour)
-  function TimeLeft({ target }: { target: Date }) {
-    const format = (t: number) => {
-        const diff = Math.max(0, t - Date.now())
-        if (diff <= 0) return '已截止'
-        const d = Math.floor(diff / (1000 * 60 * 60 * 24))
-        const h = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
-        const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
-        const s = Math.floor((diff % (1000 * 60)) / 1000)
-        const pad = (n: number) => n.toString().padStart(2, '0')
-        return `剩餘: ${d}日${pad(h)}時${pad(m)}分${pad(s)}秒`
-    }
-
-    const [label, setLabel] = useState(() => format(target.getTime()))
-
-    useEffect(() => {
-      const tick = () => setLabel(format(target.getTime()))
-      tick()
-      const id = setInterval(tick, 1000)
-      return () => clearInterval(id)
-    }, [target])
-
-    return <span className="font-bold text-green-700">{label}</span>
-  }
-
   // WhatsApp helpers
   const buildWhatsappUrl = (phone: string, text: string) => {
     const pn = (phone || "").replace(/\D/g, "");
     const encoded = encodeURIComponent(text);
-    return `https://wa.me/${pn}?text=${encoded}`;
+    return `https://wa.me/852${pn}?text=${encoded}`;
   };
 
   // Find product by matching digit-only SKU portions (orders use a different SKU format)
@@ -220,16 +197,35 @@ export default function OrdersPage() {
     return products.find((p) => (p.sku || "").replace(/\D/g, "") === digits);
   };
 
-  const sendWhatsapp = (r: Registration, type: string, options?: { skipRedirect?: boolean }) => {
+  const sendWhatsapp = async (r: Registration, type: string, options?: { skipRedirect?: boolean, statusOverride?: string, suppressToast?: boolean }) => {
     const name = r.customerName ?? "顧客";
     const sku = r.sku ?? "";
     const variation = r.variation ?? "";
     let text = "";
+    
+    // Status Logic: Allow override or derive from action type
+    let status = options?.statusOverride ?? r.status;
+    const isOverride = !!options?.statusOverride;
 
-    if (type === "confirm") {
-      text = `您好 ${name}，您的訂單 ${sku} (${variation}) 已確認。請於24小時內完成付款。若需付款資料或支付連結，請回覆本訊息。謝謝！`;
-    } else if (type === "out-of-stock") {
-      text = `您好 ${name}，很抱歉，您預約的商品 ${sku} (${variation}) 目前缺貨。如需退款或等待補貨，請告訴我們。造成不便敬請見諒。`;
+    if (!isOverride) {
+        if (type === "confirm") {
+          text = `您好 ${name}，您的訂單 ${sku} (${variation}) 已確認。請於24小時內完成付款。若需付款資料或支付連結，請回覆本訊息。謝謝！`;
+          status = "confirmed";
+        } else if (type === "out-of-stock") {
+          text = `您好 ${name}，很抱歉，您預約的商品 ${sku} (${variation}) 目前缺貨。如需退款或等待補貨，請告訴我們。造成不便敬請見諒。`;
+          status = "out-of-stock";
+        } else if (type === "verify") {
+          text = `您好 ${name}，我們已收到您的付款證明並確認訂單 ${sku} (${variation})。貨品寄出時會再通知您，謝謝！`;
+          status = "verified";
+        } else if (type === "void") {
+          status = "void";
+        } else if (type === "archive") {
+          status = "completed";
+        } else if (type === "force-pay") {
+          status = "paid";
+        } else if (type === "mark-paid") {
+          status = "verified";
+        }
     }
 
     if (text) {
@@ -243,28 +239,55 @@ export default function OrdersPage() {
       }
     }
 
+    // DB Update
+    if (isOverride || status !== r.status) {
+        let updatePayload: any = { status: status }
+        // For mark-paid (Manual Payment), we record extra metadata
+        if (type === 'mark-paid') {
+           updatePayload = {
+               ...updatePayload,
+               verified_at: new Date().toISOString(),
+               payment_method: 'manual'
+           }
+        }
+        
+        const { error } = await supabase
+            .from('reels_orders')
+            .update(updatePayload)
+            .eq('id', r.id);
+
+        if (error) {
+            console.error("Failed to update status", error);
+            pushToast({
+                title: "更新失敗",
+                description: error.message,
+                variant: "destructive",
+            });
+            return;
+        }
+    }
+
     // optimistic update: mark the single order as processed so user sees it's handled
     const updater = (prev: Registration[]) => prev.map((item) => {
         if (item.id !== r.id) return item;
-
-        let s = item.status;
-        if (type === 'confirm') s = 'in-stock';
-        else if (type === 'out-of-stock') s = 'out-of-stock';
-        else if (type === 'verify') s = 'verified';
-        else if (type === 'void') s = 'void';
-        else if (type === 'archive') s = 'completed';
-        else if (type === 'undo') s = 'pending'; // Reset to pending on undo
-
-        return { ...item, status: s, adminAction: type as any };
+        return { ...item, status: status as Registration['status'], adminAction: type as any };
     });
 
     setRegistrations(updater);
 
-    pushToast({
-      title: "已處理",
-      description: `${name} 的訂單操作: ${type}`,
-      open: true,
-    });
+    if (!options?.suppressToast) {
+        // Map types to Chinese - duplicating map here to avoid export issues
+        const typeMap: Record<string, string> = {
+            'confirm': '確認訂單', 'out-of-stock': '標記缺貨', 'verify': '核對收款', 
+            'archive': '歸檔', 'undo': '撤銷操作', 'void': '取消訂單',
+            'resend': '補發通知', 'force-pay': '標記付款', 'mark-paid': '手動收款'
+        }
+        pushToast({
+            title: "已處理",
+            description: `${name} 的訂單操作: ${typeMap[type] || type}`,
+            open: true,
+        });
+    }
   };
 
   const toggleExpand = useCallback((sku: string) => {
@@ -300,7 +323,9 @@ export default function OrdersPage() {
             .from('reels_orders')
             .select(`
                 *,
+                price,
                 SKU_details (
+                    regular_price,
                     SKU_date,
                     reels_deadline,
                     SKU_images (
@@ -415,7 +440,7 @@ export default function OrdersPage() {
               {/* Search and Controls */}
               <div className="space-y-3 md:space-y-0 md:flex md:items-center md:gap-3">
                 <div className="flex-1">
-                  <Input placeholder="搜尋 SKU（可部分匹配）" value={searchSku} onChange={(e) => setSearchSku((e.target as HTMLInputElement).value)} className="text-sm" />
+                  <Input placeholder="搜尋 SKU / 顧客 / 訂單號" value={searchSku} onChange={(e) => setSearchSku((e.target as HTMLInputElement).value)} className="text-sm" />
                 </div>
                 <div className="flex gap-2">
                  
@@ -434,81 +459,71 @@ export default function OrdersPage() {
                 {groups.map((g, idx) => {
                   const firstItem = g.items[0];
                   const previewImage = firstItem.imageUrl;
-                  const skuDate = firstItem.skuDate;
                   const deadline = firstItem.reelsDeadline;
-
-                  // Deadline Logic
-                  const isCutoff = deadline && new Date(deadline) < new Date();
-                  const isActive = deadline && new Date(deadline) > new Date();
-
-                  let deadlineBadge = null;
-                  if (isActive) {
-                    deadlineBadge = (
-                      <span className="inline-flex items-center text-[10px] font-medium text-green-700">
-                         <TimeLeft target={new Date(deadline!)} />
-                      </span>
-                    );
-                  }
                   
-                  // 1. Calculate Stats
+                  // Stats
                   const total = g.items.length;
-                  const unpaid = g.items.filter(i => ['confirmed', 'in-stock', 'pending'].includes(i.status)).length;
                   const verifying = g.items.filter(i => i.status === 'paid').length;
-                  const completed = g.items.filter(i => ['verified', 'completed'].includes(i.status)).length;
-                  const voided = g.items.filter(i => ['void', 'out-of-stock'].includes(i.status)).length;
-                  const waitlist = g.items.filter(i => i.status === 'waitlist').length;
-
-                  // 2. Stats for Progress Bar (Color Stops)
-                  const pCompleted = (completed / total) * 100;
-                  const pVerifying = (verifying / total) * 100;
-                  const pUnpaid = (unpaid / total) * 100;
-                  const pVoid = (voided / total) * 100;
-                  const pWaitlist = (waitlist / total) * 100;
-
-                  // 3. CTA Logic
-                  let cta = null;
-                   const isAllCompleted = g.items.every(i => 
+                  const processingCount = g.items.filter(i => !['verified', 'completed', 'void', 'out-of-stock'].includes(i.status)).length;
+                  
+                  // Traffic Light Logic
+                  const isAllCompleted = g.items.every(i => 
                     ['verified', 'completed', 'void', 'out-of-stock'].includes(i.status)
                   );
-
-                  if (!isAllCompleted) {
-                    cta = (
-                      <div className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium border border-blue-200 whitespace-nowrap">
-                        待處理
-                      </div>
-                    );
-                  } else {
-                    cta = (
-                      <div className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium border border-green-200 whitespace-nowrap">
-                        已完成
-                      </div>
-                    );
+                  
+                  // Urgency Logic
+                  const now = new Date();
+                  const deadlineDate = deadline ? new Date(deadline) : null;
+                  const isDeadlinePassed = deadlineDate ? deadlineDate < now : false;
+                  const hoursLeft = deadlineDate ? (deadlineDate.getTime() - now.getTime()) / 3600000 : 0;
+                  
+                  // 1. Workflow Badge (Top Right)
+                  let workflowBadge = null;
+                  if (verifying > 0) {
+                     workflowBadge = (
+                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold border border-blue-200 shadow-sm whitespace-nowrap">
+                         待核數 {verifying}
+                       </span>
+                     );
+                  } else if (isAllCompleted) {
+                     workflowBadge = (
+                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-gray-50 text-gray-400 text-xs font-medium border border-gray-100 whitespace-nowrap">
+                         已完成
+                       </span>
+                     );
                   }
 
-                   // 4. Variation Logic
-                  const variationStats = g.items.reduce((acc, it) => {
-                    if (!acc[it.variation]) {
-                      acc[it.variation] = { count: 0, hasVerifying: false };
-                    }
-                    acc[it.variation].count += 1;
-                    if (it.status === 'paid') {
-                      acc[it.variation].hasVerifying = true;
-                    }
-                    return acc;
-                  }, {} as Record<string, { count: number, hasVerifying: boolean }>);
-
+                  // 2. Urgency Label (Always calculated)
+                  let urgencyLabel = null;
+                  if (isDeadlinePassed) {
+                      urgencyLabel = (
+                        <span className="text-red-600 text-[10px] md:text-xs font-bold whitespace-nowrap">
+                          🔴 已截單
+                        </span>
+                      );
+                  } else if (hoursLeft < 24 && deadlineDate) {
+                      urgencyLabel = (
+                        <span className="text-orange-600 text-[10px] md:text-xs font-bold whitespace-nowrap">
+                           🟠 剩餘 {Math.ceil(hoursLeft)} 小時
+                        </span>
+                      );
+                  } else {
+                      urgencyLabel = (
+                        <span className="text-green-600 text-[10px] md:text-xs font-bold whitespace-nowrap">
+                           🟢 進行中
+                        </span>
+                      );
+                  }
 
                   return (
                     <div 
                       key={g.sku} 
-                      className="group relative bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer overflow-hidden pb-4"
+                      className="group relative bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer overflow-hidden flex items-center h-24"
                       onClick={() => toggleExpand(g.sku)}
                     >
-                      {/* Top Row */}
-                      <div className="p-4 flex gap-4">
                         {/* Image */}
                         <div 
-                          className="w-20 rounded-lg bg-gray-100 flex-shrink-0 relative overflow-hidden border border-gray-100 cursor-zoom-in"
+                          className="w-24 h-full bg-gray-100 relative overflow-hidden flex-shrink-0 border-r border-gray-100"
                           onClick={(e) => {
                             e.stopPropagation();
                             if (previewImage) setFullscreenImage(previewImage);
@@ -521,46 +536,59 @@ export default function OrdersPage() {
                           )}
                         </div>
                         
-                        {/* Info */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex flex-col gap-2">
-                            <div>
-                                <h3 className="text-lg font-bold text-gray-900 leading-tight">
-                                  {firstItem.skuId ? (
-                                    <Link 
-                                      href={`/product/${firstItem.skuId}`} 
-                                      target="_blank"
-                                      onClick={(e) => e.stopPropagation()} 
-                                      className="hover:text-blue-600 hover:underline decoration-blue-300 underline-offset-4 transition-all"
-                                    >
-                                      {g.sku}
-                                    </Link>
-                                  ) : (
-                                    g.sku
-                                  )}
-                                </h3>
-                                <div className="text-xs text-gray-500 mt-0.5">{skuDate || '無日期'}</div>
-                            </div>
-
-                              {(deadlineBadge || isActive || isCutoff) && (
-                                <div className="mt-1 flex items-center justify-between w-full">
-                                  {(isActive || isCutoff) && (
-                                     <span className={`text-[10px] font-medium flex items-center gap-1 ${isActive ? 'text-green-600' : 'text-red-600'}`}>
-                                        <div className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-green-500' : 'bg-red-500'}`} />
-                                        {isActive ? '收單中' : '已截單'}
+                        {/* Info Section */}
+                        <div className="flex-1 min-w-0 px-3 py-2 self-center">
+                             <div className="flex flex-col gap-1">
+                                 {/* Top Row: SKU + Urgency | Workflow Badge */}
+                                 <div className="flex justify-between items-start gap-2">
+                                     <div className="flex flex-col gap-0.5 min-w-0">
+                                         <h3 className="text-base font-bold text-gray-900 leading-none truncate">
+                                            {firstItem.skuId ? (
+                                                <Link 
+                                                  href={`/product/${firstItem.skuId}`}  
+                                                  target="_blank"
+                                                  onClick={(e) => e.stopPropagation()} 
+                                                  className="hover:text-blue-600 transition-colors"
+                                                >
+                                                  {g.sku}
+                                                </Link>
+                                              ) : (
+                                                g.sku
+                                              )}
+                                              {/* Order Number on Card */}
+                                              {total === 1 && (
+                                                <span 
+                                                  className="ml-2 text-xs font-mono text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded cursor-copy hover:bg-gray-200 transition-colors"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    navigator.clipboard.writeText(firstItem.orderNumber);
+                                                    pushToast({ description: "訂單號已複製" });
+                                                  }}
+                                                  title="點擊複製訂單號"
+                                                >
+                                                  #{firstItem.orderNumber}
+                                                </span>
+                                              )}
+                                         </h3>
+                                         {urgencyLabel && (
+                                            <div className="mt-0.5">
+                                                {urgencyLabel}
+                                            </div>
+                                         )}
+                                     </div>
+                                     <div className="flex-shrink-0">
+                                        {workflowBadge}
+                                     </div>
+                                 </div>
+                                 
+                                 <div className="flex items-center mt-1 gap-1.5">
+                                     <span className={`text-xs px-1.5 py-0.5 rounded font-bold ${processingCount > 0 ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
+                                        {processingCount > 0 ? `${processingCount} 待處理` : '全完成'}
                                      </span>
-                                  )}
-                                  {deadlineBadge}
-                                </div>
-                              )}
-                              
-                              <div className="flex items-center justify-between mt-1">
-                                <span className="font-medium text-gray-700 text-sm">合共{total} 筆訂單</span>
-                                {cta}
-                              </div>
-                          </div>
+                                     <span className="text-gray-400 text-xs">/ 共{total}筆訂單</span>
+                                 </div>
+                             </div>
                         </div>
-                      </div>
                     </div>
                   );
                 })}

@@ -1,0 +1,35 @@
+diff --git a/node/index.js b/node/index.js
+index 011d04b450687083e7a0ec9023c41ee79104831c..ef871edb00c1f12e5473b7cf54354a06acadb8c1 100644
+--- a/node/index.js
++++ b/node/index.js
+@@ -1,26 +1,7 @@
+-let parts = [process.platform, process.arch];
+-if (process.platform === 'linux') {
+-  const { MUSL, familySync } = require('detect-libc');
+-  const family = familySync();
+-  if (family === MUSL) {
+-    parts.push('musl');
+-  } else if (process.arch === 'arm') {
+-    parts.push('gnueabihf');
+-  } else {
+-    parts.push('gnu');
+-  }
+-} else if (process.platform === 'win32') {
+-  parts.push('msvc');
+-}
+-
+-if (process.env.CSS_TRANSFORMER_WASM) {
+-  module.exports = require(`../pkg`);
+-} else {
+-  try {
+-    module.exports = require(`lightningcss-${parts.join('-')}`);
+-  } catch (err) {
+-    module.exports = require(`../lightningcss.${parts.join('-')}.node`);
+-  }
++try {
++  module.exports = require('../../lightningcss-darwin-x64/lightningcss.darwin-x64.node');
++} catch (e) {
++  throw e;
+ }
+ 
+ module.exports.browserslistToTargets = require('./browserslistToTargets');

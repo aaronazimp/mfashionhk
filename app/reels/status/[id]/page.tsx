@@ -11,6 +11,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 interface Order {
   id: string;
+  order_number?: string;
   created_at: string;
   sku: string;
   price: number;
@@ -57,7 +58,7 @@ export default async function WaitlistPage({
           </p>
           <div className="bg-zinc-50 p-4 rounded-lg border border-zinc-100 mt-4">
              <p className="text-sm text-zinc-500 mb-1">訂單編號</p>
-             <p className="font-mono font-medium">{id}</p>
+             <p className="font-mono font-medium">{order?.order_number || id.slice(0, 8).toUpperCase()}</p>
              {order && (
                 <p className="text-sm font-medium text-zinc-900 mt-2">
                     {order.product_name}

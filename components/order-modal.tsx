@@ -7,6 +7,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogClose,
 } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -17,15 +18,17 @@ import { supabase } from "@/lib/supabase"
 import { 
   ChevronDownIcon, MessageCircle, Loader2, Send, ArrowRight, 
   CheckCircle2, Clock, AlertCircle, Eye, CheckCircle, XCircle, X,
-  ExternalLink, CreditCard, Archive, Undo, ZoomIn 
+  ExternalLink, CreditCard, Archive, Undo, ZoomIn, Banknote 
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { zhTW } from 'date-fns/locale'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
+import { useToast } from '@/hooks/use-toast'
+import { ToastAction } from '@/components/ui/toast'
 
 // Expanded Action Types for full lifecycle management
-type ActionType = 'confirm' | 'out-of-stock' | 'verify' | 'archive' | 'undo' | 'void' | 'resend' | 'force-pay'
+type ActionType = 'confirm' | 'out-of-stock' | 'verify' | 'archive' | 'undo' | 'void' | 'resend' | 'force-pay' | 'mark-paid'
 
 type Props = {
   open: boolean
@@ -34,8 +37,8 @@ type Props = {
   // Renamed to indicate these are just the ones passed from parent (optimistic)
   initialItems: Registration[]
   product?: any
-  // Updated signature to handle all action types
-  onAction: (r: Registration, type: ActionType, options?: { skipRedirect?: boolean }) => void
+  // Updated signature to handle all action types with toast suppression
+  onAction: (r: Registration, type: ActionType, options?: { skipRedirect?: boolean, statusOverride?: string, suppressToast?: boolean }) => void
   formatTime: (d: Date) => string
 }
 
@@ -55,11 +58,24 @@ const renderStatus = (status: string) => {
     case 'completed':
       return <Badge variant="secondary" className="bg-green-100 text-green-800 border-green-200 gap-1"><CheckCircle className="w-3 h-3" /> 已完成</Badge>
     case 'void':
-    case 'out-of-stock':
       return <Badge variant="outline" className="bg-gray-50 text-gray-500 border-gray-200 gap-1"><XCircle className="w-3 h-3" /> 已取消</Badge>
+    case 'out-of-stock':
+      return <Badge variant="outline" className="bg-gray-50 text-gray-500 border-gray-200 gap-1"><XCircle className="w-3 h-3" /> 缺貨</Badge>
     default:
       return <Badge variant="outline" className="text-gray-500 border-gray-200">{status}</Badge>
   }
+}
+
+const actionToChinese: Record<string, string> = {
+  'confirm': '確認訂單',
+  'out-of-stock': '標記缺貨',
+  'verify': '核對收款',
+  'archive': '歸檔',
+  'undo': '撤銷操作',
+  'void': '取消訂單',
+  'resend': '補發通知',
+  'force-pay': '標記付款',
+  'mark-paid': '手動收款'
 }
 
 const statusPriority: Record<string, number> = {
@@ -76,6 +92,7 @@ const statusPriority: Record<string, number> = {
 
 export default function OrderModal({ open, onOpenChange, sku, initialItems, product, onAction, formatTime }: Props) {
   const isMobile = useIsMobile()
+  const { toast } = useToast()
   const [processingState, setProcessingState] = useState<{ id: string, action: string } | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkProcessing, setBulkProcessing] = useState(false)
@@ -87,10 +104,10 @@ export default function OrderModal({ open, onOpenChange, sku, initialItems, prod
   const [loading, setLoading] = useState(false)
 
   // Sync props to state if props change (optimistic update support)
-  // We only reset when SKU changes, not when parent data updates, to avoid overwriting full fetched list with partial page list
+  // We only reset when SKU changes or if parent provides newer data (e.g. from realtime)
   useEffect(() => {
     setItems(initialItems)
-  }, [sku]) // Only reset on SKU switch
+  }, [sku, initialItems]) 
 
   // Fetch full list on open
   useEffect(() => {
@@ -101,7 +118,9 @@ export default function OrderModal({ open, onOpenChange, sku, initialItems, prod
           .from('reels_orders')
           .select(`
             *,
+            price,
             SKU_details (
+              regular_price,
               SKU_date,
               reels_deadline,
               SKU_images (
@@ -124,6 +143,9 @@ export default function OrderModal({ open, onOpenChange, sku, initialItems, prod
   
   // Image Preview State
   const [previewProof, setPreviewProof] = useState<string | null>(null)
+  
+  // Verification Dialog State
+  const [verifyingItem, setVerifyingItem] = useState<Registration | null>(null)
 
   // Batch Mode State
   const [batchMode, setBatchMode] = useState(false)
@@ -163,7 +185,7 @@ export default function OrderModal({ open, onOpenChange, sku, initialItems, prod
         case 'paid': return items.filter(i => i.status === 'paid')
         case 'confirmed': return items.filter(i => ['confirmed', 'in-stock'].includes(i.status))
         case 'waitlist': return items.filter(i => ['waitlist', 'pending'].includes(i.status))
-        case 'completed': return items.filter(i => ['verified', 'completed'].includes(i.status))
+        case 'completed': return items.filter(i => ['verified', 'completed', 'void', 'out-of-stock'].includes(i.status))
         default: return items
     }
   }, [items, activeTab])
@@ -219,11 +241,15 @@ export default function OrderModal({ open, onOpenChange, sku, initialItems, prod
     // This differs slightly from page.tsx where pending might be in unpaid, but we stick to modal consistency here.
     const waitlist = items.filter(i => ['waitlist', 'pending'].includes(i.status)).length
     const voided = items.filter(i => ['void', 'out-of-stock'].includes(i.status)).length
+    
+    // Detailed breakdown for voided
+    const cancelled = items.filter(i => i.status === 'void').length
+    const outOfStock = items.filter(i => i.status === 'out-of-stock').length
 
-    return { total, completed, verifying, unpaid, waitlist, voided }
+    return { total, completed, verifying, unpaid, waitlist, voided, cancelled, outOfStock }
   }, [items])
 
-  const { total, completed, verifying, unpaid, waitlist, voided } = stats
+  const { total, completed, verifying, unpaid, waitlist, voided, cancelled, outOfStock } = stats
   const pCompleted = total > 0 ? (completed / total) * 100 : 0
   const pVerifying = total > 0 ? (verifying / total) * 100 : 0
   const pUnpaid = total > 0 ? (unpaid / total) * 100 : 0
@@ -239,30 +265,83 @@ export default function OrderModal({ open, onOpenChange, sku, initialItems, prod
 
   const handleAction = (r: Registration, type: ActionType) => {
     if (processingState) return
+    const prevStatus = r.status
     setProcessingState({ id: r.id, action: type })
     
-    // Cloud Sync
-    onAction(r, type)
+    // Cloud Sync (with toast suppression)
+    onAction(r, type, { suppressToast: true })
 
     // Local Optimistic Update
     setItems((prev) => prev.map((item) => {
         if (item.id !== r.id) return item;
 
         let s = item.status;
-        if (type === 'confirm') s = 'in-stock';
+        if (type === 'confirm') s = 'confirmed';
         else if (type === 'out-of-stock') s = 'out-of-stock';
         else if (type === 'verify') s = 'verified';
         else if (type === 'void') s = 'void';
         else if (type === 'archive') s = 'completed';
-        else if (type === 'undo') s = 'pending';
+        else if (type === 'force-pay') s = 'paid';
+        else if (type === 'mark-paid') s = 'verified';
 
         return { ...item, status: s, adminAction: type as any };
     }));
+
+    // Toast with Undo
+    if (type === 'mark-paid') {
+        toast({
+            title: "已標記為收款完成",
+            description: "訂單已直接跳轉至已完成狀態。",
+            duration: 8000,
+            action: (
+                <ToastAction 
+                    altText="撤銷" 
+                    onClick={() => handleUndo(r, prevStatus)}
+                    className="bg-gray-800 text-white hover:bg-gray-700 border-none flex items-center gap-2 px-3"
+                >
+                    <Undo className="w-3 h-3" />
+                    撤銷
+                </ToastAction>
+            ),
+        })
+    } else {
+        toast({
+            title: "已更新",
+            description: `${r.customerName} 的訂單操作: ${actionToChinese[type] || type}`,
+            duration: 8000,
+            action: (
+                <ToastAction 
+                    altText="撤銷" 
+                    onClick={() => handleUndo(r, prevStatus)}
+                    className="bg-gray-800 text-white hover:bg-gray-700 border-none flex items-center gap-2 px-3"
+                >
+                    <Undo className="w-3 h-3" />
+                    撤銷
+                </ToastAction>
+            ),
+        })
+    }
 
     // Simulate API delay for UX
     setTimeout(() => {
         setProcessingState(null)
     }, 400)
+  }
+
+  const handleUndo = (r: Registration, oldStatus: Registration['status']) => {
+      // 1. Optimistic Revert
+      setItems((prev) => prev.map((item) => {
+          if (item.id !== r.id) return item;
+          return { ...item, status: oldStatus };
+      }));
+
+      // 2. Cloud Revert
+      onAction(r, 'undo', { skipRedirect: true, statusOverride: oldStatus });
+
+      toast({
+          title: "已撤銷",
+          description: "訂單狀態已恢復",
+      })
   }
 
   const toggleSelection = (id: string) => {
@@ -313,7 +392,7 @@ export default function OrderModal({ open, onOpenChange, sku, initialItems, prod
         .replace(/{{sku}}/g, sku || '')
         .replace(/{{variation}}/g, currentItem.variation)
     const phone = currentItem.whatsapp.replace(/\D/g, '')
-    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank')
+    window.open(`https://wa.me/852${phone}?text=${encodeURIComponent(text)}`, '_blank')
 
     // 2. Action
     onAction(currentItem, batchAction, { skipRedirect: true })
@@ -371,6 +450,93 @@ export default function OrderModal({ open, onOpenChange, sku, initialItems, prod
     )
   }
 
+  const renderVerificationDialog = () => {
+    if (!verifyingItem) return null;
+    return (
+      <Dialog open={!!verifyingItem} onOpenChange={(o) => !o && setVerifyingItem(null)}>
+        <DialogContent className="max-w-2xl w-[95vw] max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
+             <div className="flex-1 overflow-y-auto p-6">
+                <DialogHeader className="mb-4">
+                    <DialogTitle className="text-xl flex items-center gap-2">
+                        <ZoomIn className="w-5 h-5 text-gray-500" />
+                        核對付款證明
+                    </DialogTitle>
+                </DialogHeader>
+
+                <div className="grid md:grid-cols-2 gap-6">
+                    <div className="space-y-4">
+                         <div className="bg-gray-50 rounded-lg p-4 space-y-3 border border-gray-200">
+                             <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+                                <CreditCard className="w-4 h-4" /> 訂單資料
+                             </h4>
+                             <div className="grid grid-cols-2 gap-y-2 text-sm">
+                                 <span className="text-gray-500">顧客:</span>
+                                 <span className="font-medium text-right">{verifyingItem.customerName}</span>
+                                 
+                                 <span className="text-gray-500">電話:</span>
+                                 <span className="font-mono text-right">{verifyingItem.whatsapp}</span>
+                                 
+                                 <span className="text-gray-500">商品:</span>
+                                 <span className="text-right truncate">{verifyingItem.sku}</span>
+                                 
+                                 <span className="text-gray-500">規格:</span>
+                                 <Badge variant="outline" className="w-fit justify-self-end">{verifyingItem.variation}</Badge>
+
+                                 <div className="col-span-2 border-t border-gray-200 my-2"></div>
+                                 
+                                 <span className="text-gray-900 font-bold">應付金額:</span>
+                                 <span className="text-xl font-bold text-green-600 text-right">
+                                    {verifyingItem.price != null ? `$${verifyingItem.price}` : '未設定'}
+                                 </span>
+                             </div>
+                         </div>
+                         
+                         {/* Button removed as requested */}
+                    </div>
+
+                    <div 
+                        className="flex flex-col items-center justify-center bg-gray-100 rounded-lg border border-gray-200 overflow-hidden min-h-[300px] relative cursor-zoom-in"
+                        onClick={() => verifyingItem.paymentProofUrl && setPreviewProof(verifyingItem.paymentProofUrl)}
+                    >
+                        {verifyingItem.paymentProofUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img 
+                                src={verifyingItem.paymentProofUrl} 
+                                alt="Proof" 
+                                className="w-full h-full object-contain absolute inset-0 transition-transform hover:scale-105"
+                            />
+                        ) : (
+                            <div className="text-gray-400 flex flex-col items-center gap-2">
+                                <AlertCircle className="w-8 h-8" />
+                                <span>無付款圖片</span>
+                            </div>
+                        )}
+                    </div>
+                </div>
+             </div>
+
+             <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3 sticky bottom-0">
+                  <Button variant="ghost" onClick={() => setVerifyingItem(null)}>
+                      {verifyingItem.status === 'paid' ? '暫不處理' : '關閉'}
+                  </Button>
+                  {verifyingItem.status === 'paid' && (
+                      <Button 
+                        className="bg-green-600 hover:bg-green-700 min-w-[120px]"
+                        onClick={() => {
+                            handleAction(verifyingItem, 'verify');
+                            setVerifyingItem(null);
+                        }}
+                      >
+                          <CheckCircle className="w-4 h-4 mr-2" />
+                          確認收款
+                      </Button>
+                  )}
+             </div>
+        </DialogContent>
+      </Dialog>
+    )
+  }
+
   const renderOrderList = () => (
       <div ref={listRef} className={isMobile ? 'h-full overflow-y-auto pb-32 px-3' : 'h-full overflow-y-auto pb-24 px-1 space-y-4'}>
         {filteredItems.length > 0 && selectedIds.size < filteredItems.length && (
@@ -410,7 +576,7 @@ export default function OrderModal({ open, onOpenChange, sku, initialItems, prod
                     <div onClick={(e) => e.stopPropagation()}>
                         <Checkbox checked={allSelected || (someSelected && "indeterminate")} onCheckedChange={() => toggleGroup(groupIds)} />
                     </div>
-                    <span className="font-bold text-gray-700">{variation}</span>
+                    <span className="font-bold text-gray-700 text-sm">{variation}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge variant="secondary" className="bg-white text-gray-500 hover:bg-white">{its.length}</Badge>
@@ -419,18 +585,23 @@ export default function OrderModal({ open, onOpenChange, sku, initialItems, prod
               </div>
 
               {expanded && (
-                <div className="flex flex-col">
+                <div className="flex flex-col px-4 bg-white border-t border-gray-100">
                   {its.map((r) => (
-                    <div key={r.id} className={`flex gap-3 px-4 py-6 border-b border-gray-100 last:border-0 transition-colors ${selectedIds.has(r.id) ? 'bg-blue-50/30' : 'hover:bg-gray-50/50'}`}>
+                    <div key={r.id} className={`flex gap-3 py-4 border-b border-gray-100 last:border-0 transition-colors ${selectedIds.has(r.id) ? 'bg-blue-50/30 -mx-4 px-4' : 'hover:bg-gray-50 -mx-4 px-4'}`}>
                       <div className="pt-1">
                         <Checkbox checked={selectedIds.has(r.id)} onCheckedChange={() => toggleSelection(r.id)} />
                       </div>
+      {renderVerificationDialog()}
                       
                       <div className="flex-1 min-w-0 flex flex-col gap-3">
-                        {/* 1. Header Row: Status | Time | Void (X) */}
-                        <div className="flex justify-between items-center mb-1">
-                             <div className="flex items-center gap-2">
-                                   {renderStatus(r.status)}
+                        <div className="flex justify-between items-start">
+                             <div className="flex flex-col gap-2">
+                                   <div className="flex items-center gap-2">
+                                       {renderStatus(r.status)}
+                                       {/* Order Number */}
+                                       <span className="text-xs font-mono text-gray-500">#{r.orderNumber}</span>
+                                   </div>
+                                   <span className="font-bold text-sm text-gray-900 leading-tight">{r.customerName}</span>
                              </div>
                              
                              <div className="flex items-center gap-2">
@@ -439,53 +610,40 @@ export default function OrderModal({ open, onOpenChange, sku, initialItems, prod
                                         {formatDistanceToNow(r.timestamp, { addSuffix: true, locale: zhTW })}
                                    </span>
 
-                                   {/* Void Action Button */}
-                                   {(['waitlist', 'pending', 'confirmed', 'in-stock', 'paid'].includes(r.status)) && (
-                                           <Button 
-                                              size="sm"
-                                              variant="outline"
-                                              className="h-6 px-2 text-[10px] text-red-600 border-red-200 bg-white hover:bg-red-50 transition-all font-medium"
-                                              onClick={() => handleAction(r, 'out-of-stock')}
-                                              title="Cancel Order"
-                                           >
-                                              取消訂單
-                                           </Button>
+                                   {(['confirmed', 'in-stock', 'paid'].includes(r.status)) && (
+                                       <button 
+                                            className="ml-1 p-1.5 rounded-full text-gray-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                            onClick={(e) => { e.stopPropagation(); handleAction(r, 'void'); }}
+                                       >
+                                            <X size={16} />
+                                       </button>
                                    )}
                              </div>
                         </div>
 
-                        {/* 2. Customer Name Row */}
-                        <div>
-                             <span className="font-bold text-base text-gray-900">{r.customerName}</span>
-                        </div>
-
-                        {/* 3. WhatsApp Row */}
-                        <div>
-                             <a href={`https://wa.me/${r.whatsapp.replace(/\D/g,'')}`} target="_blank" className="text-sm text-gray-500 flex items-center hover:text-gray-900 transition-colors">
-                                <MessageCircle className="w-4 h-4 mr-2" /> {r.whatsapp}
+                        <div className="mb-2">
+                             <a href={`https://wa.me/852${r.whatsapp.replace(/\D/g,'')}`} target="_blank" className="text-xs text-gray-500 flex items-center hover:text-gray-900 transition-colors">
+                                <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 mr-1.5 fill-[#25D366]" xmlns="http://www.w3.org/2000/svg"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg> {r.whatsapp}
                              </a>
                         </div>
 
-                        {/* 4. Action Buttons Row */}
-                        <div className="pt-1">
-                             {/* Decision Mode: Waitlist/Pending */}
+                        <div>
                             {(r.status === 'waitlist' || r.status === 'pending') && (
-                                <div className="grid grid-cols-2 gap-3">
-                                    <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => handleAction(r, 'out-of-stock')}>
-                                        <XCircle className="w-4 h-4 mr-1.5" /> 缺貨通知
+                                <div className="grid grid-cols-2 gap-3 mt-1">
+                                    <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50 h-9" onClick={() => handleAction(r, 'out-of-stock')}>
+                                        <XCircle className="w-4 h-4 mr-1.5" /> 缺貨
                                     </Button>
-                                    <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white shadow-sm" onClick={() => handleAction(r, 'confirm')}>
-                                        <CheckCircle2 className="w-4 h-4 mr-1.5" /> 番貨通知
+                                    <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white shadow-sm h-9" onClick={() => handleAction(r, 'confirm')}>
+                                        <CheckCircle2 className="w-4 h-4 mr-1.5" /> 確認
                                     </Button>
                                 </div>
                             )}
 
-                             {/* Process Mode: Paid (Verify Only) */}
                             {r.status === 'paid' && (
                                 <Button 
                                     size="sm" 
-                                    className="w-full bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
-                                    onClick={() => handleAction(r, 'verify')}
+                                    className="w-full bg-blue-600 hover:bg-blue-700 text-white shadow-sm h-9 mt-1"
+                                    onClick={() => setVerifyingItem(r)}
                                     disabled={!!processingState}
                                 >
                                     {processingState?.id === r.id ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : <CheckCircle className="w-4 h-4 mr-1.5" />}
@@ -493,34 +651,29 @@ export default function OrderModal({ open, onOpenChange, sku, initialItems, prod
                                 </Button>
                             )}
 
-                            {/* Process Mode: Confirmed (Resend Only) */}
                             {(r.status === 'confirmed' || r.status === 'in-stock') && (
-                                <div className="flex gap-3">
-                                    <Button size="sm" variant="outline" className="flex-1 border-gray-200" onClick={() => handleAction(r, 'resend')}>
-                                        <Send className="w-4 h-4 mr-1.5" /> 補發連結
+                                <div className="flex gap-2 mt-1">
+                                    <Button size="sm" variant="outline" className="flex-1 border-gray-200 h-8 text-xs" onClick={() => handleAction(r, 'resend')}>
+                                        <Send className="w-3.5 h-3.5 mr-1.5" /> 補發付款連結
+                                    </Button>
+                                    <Button size="sm" variant="outline" className="flex-1 text-blue-600 border-blue-200 hover:bg-blue-50 h-8 text-xs" onClick={() => handleAction(r, 'mark-paid')}>
+                                        <Banknote className="w-3.5 h-3.5 mr-1.5" /> 已收款
                                     </Button>
                                 </div>
                             )}
 
-                            {/* Completed Status */}
-                            {(r.status === 'verified' || r.status === 'completed') && (
-                                <div className="flex items-center justify-between bg-gray-50 px-3 py-2 rounded text-xs text-gray-500">
-                                     <span className="flex items-center gap-1 text-green-600 font-medium">
-                                        <CheckCircle2 className="w-3 h-3" /> 交易完成
-                                     </span>
-                                     <button className="text-gray-400 hover:text-gray-600 flex items-center gap-1" onClick={() => handleAction(r, 'undo')}>
-                                        <Undo className="w-3 h-3" /> 重置
-                                     </button>
-                                </div>
-                            )}
-
-                            {/* Voided Status */}
-                             {(r.status === 'void' || r.status === 'out-of-stock') && (
-                                 <div className="flex items-center justify-between px-1">
-                                    <span className="text-xs text-gray-400 flex items-center">已取消</span>
-                                    <Button size="sm" variant="ghost" className="h-6 text-xs text-gray-400" onClick={() => handleAction(r, 'undo')}>
-                                        <Undo className="w-3 h-3 mr-1" /> 重還
-                                     </Button>
+                             {(['verified', 'completed', 'void', 'out-of-stock'].includes(r.status)) && (
+                                 <div className="mt-1">
+                                    {(['verified', 'completed'].includes(r.status)) && r.paymentProofUrl && (
+                                        <Button 
+                                            size="sm" 
+                                            variant="outline"
+                                            className="w-full h-8 text-xs text-gray-600 border-gray-200"
+                                            onClick={() => setVerifyingItem(r)}
+                                        >
+                                            <Eye className="w-3.5 h-3.5 mr-1.5" /> 查看付款證明
+                                        </Button>
+                                     )}
                                  </div>
                              )}
                         </div>
@@ -553,7 +706,8 @@ export default function OrderModal({ open, onOpenChange, sku, initialItems, prod
                   {waitlist > 0 && <span className="ml-1.5 inline-flex items-center justify-center px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 text-[10px] font-bold min-w-[18px]">{waitlist}</span>}
                 </TabsTrigger>
                 <TabsTrigger value="completed" className="text-xs px-0 data-[state=active]:text-green-700 data-[state=active]:font-bold">
-                  已完成
+                  已處理
+                  {(completed + voided) > 0 && <span className="ml-1.5 inline-flex items-center justify-center px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 text-[10px] font-bold min-w-[18px]">{completed + voided}</span>}
                 </TabsTrigger>
             </TabsList>
         </div>
@@ -594,7 +748,17 @@ export default function OrderModal({ open, onOpenChange, sku, initialItems, prod
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="p-0 gap-0 w-full h-[100dvh] sm:h-[95vh] sm:max-w-3xl flex flex-col overflow-hidden duration-200">
+      <DialogContent 
+        showCloseButton={false} 
+        className="p-0 gap-0 w-full h-[100dvh] sm:h-[95vh] sm:max-w-3xl flex flex-col overflow-hidden duration-200"
+        onInteractOutside={(e) => {
+            const target = e.target as HTMLElement;
+            // Prevent close when clicking on toasts
+            if (target.closest('[role="status"]') || target.closest('li[data-state]')) {
+                e.preventDefault();
+            }
+        }}
+      >
          {/* Header */}
          <div className="bg-white z-10 border-b border-gray-100 flex flex-col">
             <div className="px-4 py-3 flex items-center gap-4">
@@ -612,32 +776,45 @@ export default function OrderModal({ open, onOpenChange, sku, initialItems, prod
                         <Link href={`/product/${items[0]?.skuId || product?.id}`} target="_blank" className="hover:underline decoration-gray-300 underline-offset-4 decoration-2">
                             <DialogTitle className="font-bold text-lg truncate leading-tight">{sku}</DialogTitle>
                         </Link>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium border ${skuStatus === '收單中' ? 'bg-green-50 text-green-700 border-green-100' : 'bg-red-50 text-red-700 border-red-100'}`}>{skuStatus}</span>
                     </div>
-                    <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-2">
+                    <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-2 w-full">
                         <span>{items.length} 訂單</span>
-                        <span>•</span>
-                        <span className={skuStatus === '已截單' ? 'text-red-500 font-medium' : 'text-green-600'}>{timeLeftStr}</span>
+                        {timeLeftStr === '已截止' ? (
+                            <span className="ml-auto flex items-center gap-1.5 text-red-600 font-medium">
+                                <div className="w-1.5 h-1.5 rounded-full bg-red-600" />
+                                已截止
+                            </span>
+                        ) : (
+                            <>
+                                <span>•</span>
+                                <span className={skuStatus === '已截單' ? 'text-red-500 font-medium' : 'text-green-600'}>{timeLeftStr}</span>
+                            </>
+                        )}
                     </div>
                 </div>
+                <DialogClose className="p-2 -mr-2 text-gray-400 hover:text-gray-500 hover:bg-gray-100 rounded-full transition-colors">
+                    <X className="w-5 h-5" />
+                </DialogClose>
             </div>
 
             {/* Progress Bar */}
             {(total > 0) && (
                 <div className="px-4 pb-3">
                    <div className="w-full h-2.5 bg-gray-100 rounded-full flex overflow-hidden">
-                      {pCompleted > 0 && <div style={{ width: `${pCompleted}%` }} className="bg-green-500" />}
-                      {pVerifying > 0 && <div style={{ width: `${pVerifying}%` }} className="bg-blue-500 animate-pulse" />}
-                      {pUnpaid > 0 && <div style={{ width: `${pUnpaid}%` }} className="bg-orange-400" />}
-                      {pWaitlist > 0 && <div style={{ width: `${pWaitlist}%` }} className="bg-purple-400" />}
-                      {pVoid > 0 && <div style={{ width: `${pVoid}%` }} className="bg-gray-200" />}
+                      {/* Completeness Bar: Green for all processed items (Success + Void) */}
+                      <div style={{ width: `${((completed + voided) / total) * 100}%` }} className="bg-green-500 transition-all duration-500" />
                    </div>
+                   
                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-[10px] font-medium text-gray-500">
+                       {/* Summary Statistic */}
+                       <span className="font-bold text-gray-900 mr-2">
+                          已處理: {Math.round(((completed + voided) / total) * 100)}%
+                       </span>
+
+                       {/* Ordered Legend - Only show processed breakdown */}
                        {completed > 0 && <span className="flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-green-500" /> {completed} 已完成</span>}
-                       {verifying > 0 && <span className="flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-blue-500" /> {verifying} 待核對</span>}
-                       {unpaid > 0 && <span className="flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-orange-400" /> {unpaid} 待付款</span>}
-                       {waitlist > 0 && <span className="flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-purple-400" /> {waitlist} 候補</span>}
-                       {voided > 0 && <div className="flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-gray-300" /> {voided} 已取消</div>}
+                       {outOfStock > 0 && <span className="flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-gray-400" /> {outOfStock} 缺貨</span>}
+                       {cancelled > 0 && <span className="flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-gray-300" /> {cancelled} 取消</span>}
                    </div>
                 </div>
              )}

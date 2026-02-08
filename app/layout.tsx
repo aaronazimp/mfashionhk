@@ -2,6 +2,8 @@ import React from "react"
 import type { Metadata } from 'next'
 import { Merriweather } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
+import { Toaster } from "@/components/ui/toaster"
+import { GlobalCart } from "@/components/global-cart"
 import './globals.css'
 
 const merriweather = Merriweather({ 
@@ -41,6 +43,8 @@ export default function RootLayout({
         {children}
         
         <Analytics />
+        <Toaster />
+        <GlobalCart />
       </body>
     </html>
   )
