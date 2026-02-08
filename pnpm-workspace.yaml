@@ -1,2 +1,1 @@
-patchedDependencies:
-  lightningcss@1.30.2: patches/lightningcss@1.30.2.patch
+# No local patches required. Removed problematic lightningcss darwin-only patch.

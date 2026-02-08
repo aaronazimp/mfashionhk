@@ -4,11 +4,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-patchedDependencies:
-  lightningcss@1.30.2:
-    hash: baf33044cc052b1879de0bdb06e8e6dcd00b3cfcf9152466bb2baaabc71ea700
-    path: patches/lightningcss@1.30.2.patch
-
 importers:
 
   .:
