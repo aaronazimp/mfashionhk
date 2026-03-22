@@ -1,0 +1,829 @@
+"use client";
+
+import React, { useEffect, useState } from "react";
+import { getRestockAllocationData, processBulkRestock } from "@/lib/orderService";
+import type { RestockVariation } from "@/types/order";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+} from "@/components/ui/alert-dialog";
+
+
+interface RestockWizardProps {
+  isOpen: boolean;
+  onClose: () => void;
+  sku?: string;
+  // optional initial variations; otherwise demo data is used
+  initial?: RestockVariation[];
+}
+
+function SkuSummary({ sku, rows, children, preview }: { sku: string; rows: RestockVariation[]; children?: React.ReactNode; preview?: string | null }) {
+  return (
+    <div className="flex items-start gap-4">
+      <div className="w-28 h-40 bg-gray-100 rounded flex-shrink-0 overflow-hidden flex items-center justify-center">
+        {preview ? (
+          // use plain img to avoid Next/Image domain config issues in the wizard
+          <img src={preview} alt={sku} className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full bg-gray-100" />
+        )}
+      </div>
+      <div className="flex-1">
+        <div className="font-bold text-sm">{sku}</div>
+        <div className="text-xs text-gray-500 mt-1">共有 {rows.length} 個變體</div>
+        <div className="mt-2 font-bold text-sm">候補總數：{rows.reduce((s, v) => s + (v.waitlist ?? 0), 0)} 件</div>
+        {children && <div className="mt-3">{children}</div>}
+      </div>
+    </div>
+  );
+}
+
+function EmptyWidget({ title, subtitle }: { title?: string; subtitle?: string }) {
+  return (
+    <div className="py-16 flex flex-col items-center justify-center text-center text-gray-500">
+      <div className="w-16 h-16 mb-4 rounded-full bg-gray-100 flex items-center justify-center">
+        <svg className="w-8 h-8 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" d="M3 7h18M6 7v10a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7"/></svg>
+      </div>
+      <div className="font-semibold text-sm">{title ?? '無資料'}</div>
+      {subtitle && <div className="text-xs text-gray-400 mt-1">{subtitle}</div>}
+    </div>
+  );
+}
+
+export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", initial }: RestockWizardProps) {
+  const initialRows: RestockVariation[] = initial ?? [];
+
+  const [step, setStep] = useState<number>(1);
+  const [rows, setRows] = useState<RestockVariation[]>(initialRows);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [selectedVariationIndex, setSelectedVariationIndex] = useState<number>(0);
+  const [selectedCustomers, setSelectedCustomers] = useState<Record<string, string[]>>({});
+  const [allocationPreview, setAllocationPreview] = useState<Record<string, string[]>>({});
+  const [selectionErrors, setSelectionErrors] = useState<Record<string, string | undefined>>({});
+  const [processing, setProcessing] = useState(false);
+  const [restockAmounts, setRestockAmounts] = useState<Record<string, number>>({});
+  const [restockPayloadMap, setRestockPayloadMap] = useState<Record<string, { variation_id: number | string; restock_amount: number; order_ids: string[] }>>({});
+  const [quotaFromRpc, setQuotaFromRpc] = useState<Record<string, number | undefined>>({});
+
+  useEffect(() => {
+    if (!isOpen) {
+      setStep(1);
+      setRows(initialRows);
+      setSelectedVariationIndex(0);
+      setSelectedCustomers({});
+      setAllocationPreview({});
+      setPreviewImage(null);
+    }
+  }, [isOpen]);
+
+  // reset all internal wizard state
+  const resetWizardState = () => {
+    setStep(1);
+    setRows(initialRows);
+    setSelectedVariationIndex(0);
+    setSelectedCustomers({});
+    setAllocationPreview({});
+    setSelectionErrors({});
+    setProcessing(false);
+    setRestockAmounts({});
+    setRestockPayloadMap({});
+    setPreviewImage(null);
+    setLoadingData(false);
+  };
+
+  const handleClose = () => {
+    resetWizardState();
+    onClose();
+  };
+
+  // Fetch allocation data from RPC when wizard opens with a sku prop
+  const [loadingData, setLoadingData] = useState(false);
+  useEffect(() => {
+    const fetchAllocation = async () => {
+      if (!isOpen) return;
+      const skuId = parseInt(String(sku ?? ""));
+      if (!skuId || Number.isNaN(skuId)) return;
+      setLoadingData(true);
+      try {
+        const data = await getRestockAllocationData(skuId);
+        let payload: any = data;
+        console.log('get_restock_allocation_data payload', payload);
+        if (Array.isArray(data) && data.length > 0 && data[0].get_restock_allocation_data) payload = data[0].get_restock_allocation_data;
+        else if (data.get_restock_allocation_data) payload = data.get_restock_allocation_data;
+
+        // RPC returns a `sizes` array with nested `colors`.
+        // capture main preview image if present
+        const mainPreview = payload?.main_preview_image ?? payload?.mainPreviewImage ?? null;
+        if (mainPreview) setPreviewImage(String(mainPreview));
+
+        if (payload?.sizes && Array.isArray(payload.sizes)) {
+          const mapped: RestockVariation[] = payload.sizes.flatMap((s: any) => {
+            const sizeName = s.size ?? "";
+              return (s.colors || []).map((c: any) => ({
+              variation_id: Number(c.variation_id ?? c.variationId ?? c.id),
+              id: String(c.variation_id ?? c.variationId ?? c.id),
+              size: sizeName ?? c.size ?? undefined,
+              color: c.color ?? c.color_name ?? undefined,
+              waitlist: Number(c.waitlist_count ?? c.waitlist ?? 0),
+              // preserve RPC fields for UI display (ensure numbers)
+              current_stock: Number(c.current_stock ?? c.currentStock ?? 0),
+              current_quota: (() => {
+                const cq = c.current_quota ?? c.currentQuota;
+                return cq !== undefined && cq !== null ? Number(cq) : undefined;
+              })(),
+              // keep legacy alias used across the component
+              currentQty: Number(c.current_stock ?? c.currentStock ?? 0),
+              waitlistOrders: c.waitlist_orders ?? c.waitlistOrders ?? undefined,
+            }));
+          });
+
+          if (mapped.length > 0) {
+            setRows(mapped);
+            const qmap: Record<string, number | undefined> = {};
+            for (const it of mapped) qmap[it.id] = it.current_quota as number | undefined;
+            setQuotaFromRpc(qmap);
+            console.log('restock-wizard mapped rows (sample):', mapped.map((r: any) => ({ id: r.id, current_stock: r.current_stock, current_quota: r.current_quota, currentQty: r.currentQty, waitlistOrdersSample: r.waitlistOrders?.slice(0,3) })));
+            setSelectedVariationIndex(0);
+            setSelectedCustomers({});
+            setAllocationPreview({});
+          }
+        } else {
+          // Fallback for older RPC shapes: variations or top-level array
+          const variations: any[] = payload.variations ?? (Array.isArray(payload) ? payload : []);
+          if (variations.length > 0) {
+            const mapped: RestockVariation[] = variations.map((v: any) => ({
+              variation_id: Number(v.variation_id ?? v.variationId ?? v.id),
+              id: String(v.variation_id ?? v.variationId ?? v.id),
+              size: v.size ?? v.size_name ?? undefined,
+              color: v.color ?? v.color_name ?? undefined,
+              waitlist: Number(v.waitlist_count ?? v.waitlist ?? 0),
+              current_stock: Number(v.current_stock ?? v.current_qty ?? 0),
+              current_quota: (() => {
+                const cq = v.current_quota ?? v.currentQuota;
+                return cq !== undefined && cq !== null ? Number(cq) : undefined;
+              })(),
+              currentQty: Number(v.current_qty ?? v.current_stock ?? 0),
+              waitlistOrders: v.waitlist_orders ?? v.waitlistOrders ?? undefined,
+            }));
+            setRows(mapped);
+            const qmap: Record<string, number | undefined> = {};
+            for (const it of mapped) qmap[it.id] = it.current_quota as number | undefined;
+            setQuotaFromRpc(qmap);
+            console.log('restock-wizard mapped rows (fallback) sample:', mapped.map((r: any) => ({ id: r.id, waitlistOrdersSample: r.waitlistOrders?.slice(0,3) })));
+            setSelectedVariationIndex(0);
+            setSelectedCustomers({});
+            setAllocationPreview({});
+            // also try to set preview from fallback payload
+            const mainPreviewFallback = payload?.main_preview_image ?? payload?.mainPreviewImage ?? null;
+            if (mainPreviewFallback) setPreviewImage(String(mainPreviewFallback));
+          }
+        }
+      } catch (err) {
+        // swallow for now; caller can inspect logs
+        // eslint-disable-next-line no-console
+        console.error("get_restock_allocation_data error:", err);
+      } finally {
+        setLoadingData(false);
+      }
+    };
+
+    fetchAllocation();
+  }, [isOpen, sku]);
+
+  // Helpers
+  const updateQty = (id: string, qty: number) => {
+    setRows((r) => r.map((x) => (x.id === id ? { ...x, currentQty: qty } : x)));
+  };
+
+  const updateRestockAmount = (id: string, amt: number) => {
+    setRestockAmounts((s) => {
+      const next = { ...s, [id]: amt };
+      console.log('restockAmounts (live)', next);
+      return next;
+    });
+
+    setRestockPayloadMap((p) => {
+      const next = {
+        ...p,
+        [id]: {
+          variation_id: Number(id) || id,
+          restock_amount: amt,
+          order_ids: p[id]?.order_ids ?? [],
+        },
+      };
+      console.log('restockPayloadMap (live)', next);
+      return next;
+    });
+  };
+
+  // derive customers from variation.waitlistOrders (populated from RPC)
+  const customersFor = (variation: RestockVariation) => {
+    const orders = variation.waitlistOrders;
+    return (orders || []).map((o: any) => ({
+      id: String(o.order_id),
+      name: o.customer_name,
+      order: o.order_number,
+      qty: o.quantity_needed,
+      raw: o,
+    }));
+  };
+
+  // normalize selected customer entries to string[] safely (handles legacy Set or other shapes)
+  const ensureArray = (val: any): string[] => {
+    if (!val) return [];
+    if (Array.isArray(val)) return val as string[];
+    if (val instanceof Set) return Array.from(val) as string[];
+    try {
+      // If iterable (e.g., Map keys), try Array.from
+      if (typeof (val as any)[Symbol.iterator] === 'function') return Array.from(val as any) as string[];
+    } catch (_) {}
+    // If it's a plain object with string values, return its values
+    if (typeof val === 'object') return Object.values(val).map((x) => String(x));
+    return [String(val)];
+  };
+
+  const toggleCustomer = (variationId: string, customerId: string) => {
+    setSelectedCustomers((s) => {
+      const copy = { ...s } as Record<string, string[]>;
+      const list = copy[variationId] ? [...copy[variationId]] : [];
+      const idx = list.indexOf(customerId);
+      if (idx >= 0) {
+        list.splice(idx, 1);
+        // clear any error for this variation when user unchecks
+        setSelectionErrors((e) => ({ ...e, [variationId]: undefined }));
+      } else {
+        const v = rows.find((r) => r.id === variationId);
+        const available = Number(v?.currentQty ?? 0) + Number(restockAmounts[variationId] ?? 0);
+        if (list.length >= available) {
+          // can't select more than available
+          setSelectionErrors((e) => ({ ...e, [variationId]: `已達庫存上限：${available}` }));
+          return s;
+        }
+        list.push(customerId);
+        setSelectionErrors((e) => ({ ...e, [variationId]: undefined }));
+      }
+      copy[variationId] = list;
+      return copy;
+    });
+  };
+
+  const computeAllocationPreview = () => {
+    const out: Record<string, string[]> = {};
+    for (const v of rows) {
+      const selected = ensureArray(selectedCustomers[v.id]).slice();
+      out[v.id] = selected;
+    }
+    setAllocationPreview(out);
+  };
+
+  const handleProcessRestock = async () => {
+    if (processing) return;
+    setProcessing(true);
+    try {
+      console.log('restockPayloadMap', restockPayloadMap);
+      console.log('allocationPreview', allocationPreview);
+      const payloadArray = Object.values(restockPayloadMap).map((it) => ({
+  variation_id: Number(it.variation_id) || it.variation_id,
+  restock_amount: Number(it.restock_amount ?? 0),
+  order_ids: it.order_ids ?? [],
+})).filter((it) => Number(it.restock_amount) > 0 || (it.order_ids && it.order_ids.length > 0));
+
+      // send payload (may be a no-op list of variation ids when nothing selected)
+      let payloadToSend = payloadArray;
+      if (payloadArray.length === 0 && rows.length > 0) {
+        payloadToSend = rows.map((r) => ({
+          variation_id: Number(r.id) || r.variation_id || r.id,
+          restock_amount: 0,
+          order_ids: [],
+        }));
+      }
+
+      const data = await processBulkRestock(payloadToSend);
+      // map returned latest stock into our rows for the confirmation step
+      try {
+      let payloadResult: any = data;
+      if (Array.isArray(data) && data.length > 0 && data[0].process_bulk_restock) payloadResult = data[0].process_bulk_restock;
+      else if (data && data.process_bulk_restock) payloadResult = data.process_bulk_restock;
+
+      if (Array.isArray(payloadResult)) {
+          const latestMap: Record<string, number | undefined> = {};
+          const quotaMap: Record<string, number | undefined> = {};
+          for (const it of payloadResult) {
+            const vid = String(it.variation_id ?? it.variationId ?? it.id ?? "");
+            // server may return latest stock under several names; try common alternatives
+            const stockVal = it.latest_stock ?? it.latestStock ?? it.latest ?? it.current_stock ?? it.currentStock ?? it.currentQty ?? it.current_qty;
+            latestMap[vid] = stockVal !== undefined && stockVal !== null ? Number(stockVal) : undefined;
+            const quotaVal = it.current_quota ?? it.currentQuota ?? it.latest_quota ?? it.quota;
+            quotaMap[vid] = quotaVal !== undefined && quotaVal !== null ? Number(quotaVal) : undefined;
+          }
+          
+          setRows((prev) => prev.map((r) => {
+            const hasStock = Object.prototype.hasOwnProperty.call(latestMap, r.id) && latestMap[r.id] !== undefined;
+            const hasQuota = Object.prototype.hasOwnProperty.call(quotaMap, r.id) && quotaMap[r.id] !== undefined;
+            return {
+              ...r,
+              currentQty: hasStock ? (latestMap[r.id] as number) : r.currentQty,
+              current_stock: hasStock ? (latestMap[r.id] as number) : r.current_stock,
+              current_quota: hasQuota ? (quotaMap[r.id] as number) : r.current_quota,
+            };
+          }));
+        }
+      } catch (mapErr) {
+        // non-fatal mapping error — log and continue to step 4
+        // eslint-disable-next-line no-console
+        console.error('process_bulk_restock mapping error', mapErr);
+      }
+
+      // proceed to confirmation step on success
+      setStep(4);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("process_bulk_restock error:", err);
+      // minimal user feedback
+      // eslint-disable-next-line no-alert
+      alert("補貨處理失敗，請查看紀錄");
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  useEffect(() => computeAllocationPreview(), [selectedCustomers, rows]);
+
+  // debug: log rows when showing final confirmation (avoids logging in JSX)
+  useEffect(() => {
+    if (step === 4) console.log('restock-wizard step4 rows', rows);
+  }, [step, rows]);
+
+  const autoAssignAll = () => {
+    const out: Record<string, string[]> = {};
+    for (const v of rows) {
+      const custs = customersFor(v).map((c) => c.id);
+      const available = Number(v.currentQty ?? 0) + Number(restockAmounts[v.id] ?? 0);
+      out[v.id] = custs.slice(0, available);
+    }
+    setSelectedCustomers(out);
+  };
+
+  // helpers for filtering variations that have waitlist/orders
+  const getFilteredIndices = () => rows.map((_, i) => i).filter((i) => (rows[i].waitlist ?? 0) > 0 || (rows[i].waitlistOrders?.length ?? 0) > 0);
+
+  const goToStep2 = () => {
+    const list = getFilteredIndices();
+    if (list.length > 0) setSelectedVariationIndex(list[0]);
+    // initialize payload map for all variations based on current restockAmounts
+    setRestockPayloadMap(() => {
+      const out: Record<string, { variation_id: number | string; restock_amount: number; order_ids: string[] }> = {};
+      for (const v of rows) {
+        out[v.id] = {
+          variation_id: Number(v.id) || v.id,
+          restock_amount: Number(restockAmounts[v.id] ?? 0),
+          order_ids: allocationPreview[v.id] ?? [],
+        };
+      }
+      return out;
+    });
+    setStep(2);
+  };
+
+  // keep payload order_ids in sync with allocationPreview (when user selects customers)
+  useEffect(() => {
+    setRestockPayloadMap((prev) => {
+      const copy = { ...prev };
+      for (const vid of Object.keys(allocationPreview)) {
+        const existing = copy[vid] ?? { variation_id: Number(vid) || vid, restock_amount: Number(restockAmounts[vid] ?? 0), order_ids: [] };
+        copy[vid] = { ...existing, order_ids: allocationPreview[vid] ?? [] };
+      }
+      return copy;
+    });
+  }, [allocationPreview, restockAmounts]);
+
+  useEffect(() => {
+    console.log('restockPayloadMap (updated)', restockPayloadMap);
+    
+  }, [restockPayloadMap, allocationPreview, selectedCustomers]);
+
+  const prevFiltered = () => {
+    const list = getFilteredIndices();
+    if (list.length === 0) return;
+    const idx = list.indexOf(selectedVariationIndex);
+    if (idx <= 0) setSelectedVariationIndex(list[0]);
+    else setSelectedVariationIndex(list[idx - 1]);
+  };
+
+  const nextFiltered = () => {
+    const list = getFilteredIndices();
+    if (list.length === 0) return;
+    const idx = list.indexOf(selectedVariationIndex);
+    if (idx === -1) setSelectedVariationIndex(list[0]);
+    else if (idx >= list.length - 1) setSelectedVariationIndex(list[list.length - 1]);
+    else setSelectedVariationIndex(list[idx + 1]);
+  };
+
+  // prepared filtered indices + current position for rendering controls
+  const filteredIndices = getFilteredIndices();
+  const filteredPos = filteredIndices.indexOf(selectedVariationIndex);
+
+  const selectedRow = rows[selectedVariationIndex] ?? null;
+  const selectedCurrent = Number(selectedRow?.currentQty ?? 0);
+  const selectedRestockAmount = Number(restockAmounts[selectedRow?.id ?? ""] ?? 0);
+  const selectedCombined = selectedCurrent + selectedRestockAmount;
+
+  const availableFor = (variationId: string) => {
+    const v = rows.find((r) => r.id === variationId);
+    return Number(v?.currentQty ?? 0) + Number(restockAmounts[variationId] ?? 0);
+  };
+
+  const isAllSelectedFor = (variationId: string) => {
+    const fallback: RestockVariation = { variation_id: Number(variationId), id: variationId, size: "", color: "", waitlist: 0, current_stock: 0, current_quota: 0, currentQty: 0 } as RestockVariation;
+    const custs = customersFor(rows.find((r) => r.id === variationId) ?? fallback).map((c) => c.id);
+    const available = availableFor(variationId);
+    const sel = ensureArray(selectedCustomers[variationId]);
+    if (available === 0) return false;
+    return sel.length > 0 && sel.length >= Math.min(custs.length, available) && custs.length > 0;
+  };
+
+  const toggleSelectAllFor = (variationId: string) => {
+    const fallback: RestockVariation = { variation_id: Number(variationId), id: variationId, size: "", color: "", waitlist: 0, current_stock: 0, current_quota: 0, currentQty: 0 } as RestockVariation;
+    const custs = customersFor(rows.find((r) => r.id === variationId) ?? fallback).map((c) => c.id);
+    const available = availableFor(variationId);
+    if (available === 0) {
+      setSelectionErrors((e) => ({ ...e, [variationId]: `已達庫存上限：${available}` }));
+      return;
+    }
+    const sel = ensureArray(selectedCustomers[variationId]);
+    if (sel.length >= Math.min(custs.length, available)) {
+      setSelectedCustomers((s) => ({ ...s, [variationId]: [] }));
+      setSelectionErrors((e) => ({ ...e, [variationId]: undefined }));
+    } else {
+      const toSelect = custs.slice(0, available);
+      setSelectedCustomers((s) => ({ ...s, [variationId]: toSelect }));
+      setSelectionErrors((e) => ({ ...e, [variationId]: undefined }));
+    }
+  };
+
+  return (
+    <AlertDialog open={isOpen} onOpenChange={(o) => { if (!o) handleClose(); }}>
+      <AlertDialogContent className="relative max-w-[90vw] max-h-[90vh] p-6 rounded-2xl">
+        <AlertDialogHeader>
+          <AlertDialogTitle className="sr-only">補貨明細</AlertDialogTitle>
+          <div className="flex items-center justify-between mb-4">
+            {step > 1 && step !== 4 && (
+              <Button size="icon-sm" variant="ghost" className="absolute top-2 left-2 p-0" aria-label="Back" onClick={() => setStep((s) => Math.max(1, s - 1))}>
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M15 18l-6-6 6-6" />
+                </svg>
+              </Button>
+            )}
+            <div className="flex-1 text-center">
+              <div className="text-sm font-medium text-gray-500">補貨明細</div>
+            </div>
+            <div className="ml-4 text-right">
+              <button
+                onClick={handleClose}
+                aria-label="Close"
+                className="absolute top-2 right-2 p-2 rounded-full hover:bg-gray-100 text-gray-600"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </AlertDialogHeader>
+
+        {loadingData && (
+          <div className="fixed inset-0 z-50 bg-white flex flex-col items-center justify-center">
+            <Spinner className="h-10 w-10 text-gray-600" />
+            <div className="text-sm text-gray-600 mt-3">載入中...</div>
+          </div>
+        )}
+
+        <div className="space-y-6">
+          {step === 1 && (
+            <div className="flex flex-col gap-9 ">
+              <SkuSummary sku={sku} rows={rows} preview={previewImage} />
+              {rows.length === 0 ? (
+                <EmptyWidget title="找不到變體" subtitle="目前沒有可顯示的變體資料。" />
+              ) : (
+                <div className="max-w-[400px] mx-5 max-h-[300px] overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-xs text-gray-500">
+                        <th className="text-center">尺寸</th>
+                        <th className="text-center">顏色</th>
+                        <th className="text-center">現有庫存</th>
+                        <th className="text-center">番貨數量</th>
+                        <th className="text-center">候補數量</th>
+                      </tr>
+                    </thead>
+                    <tbody className="align-top">
+                      {rows.map((r) => (
+                        <tr key={r.id} className="border-t py-2">
+                          <td className="py-3 text-xs text-center">{r.size}</td>
+                          <td className="py-3 text-xs text-center">{r.color}</td>
+                          <td className="py-3 text-xs text-center">{r.currentQty}</td>
+                          <td className="py-3 text-xs text-center">
+                            <Input
+                              type="text"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              className="w-11 h-7 text-center px-0 py-0 text-xs"
+                              value={String(restockAmounts[r.id] ?? "")}
+                              onChange={(e) => {
+                                const v = e.target.value.replace(/[^0-9]/g, "");
+                                updateRestockAmount(r.id, v === "" ? 0 : Number(v));
+                              }}
+                            />
+                          </td>
+                          <td className="py-3 text-xs text-center">{r.waitlist}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="mt-6 flex justify-center">
+                <Button size="sm" className="bg-[#C4A59D] text-white" onClick={goToStep2}>下一步</Button>
+              </div>
+            </div>
+          )}
+
+          {step === 2 && (
+            <div>
+              <SkuSummary sku={sku} rows={rows} preview={previewImage}>
+                {filteredIndices.length > 0 && (
+                  <div className="flex h-[32px]">
+                    <Button size="sm" variant="outline" onClick={autoAssignAll}>自動分配所有變體</Button>
+                  </div>
+                )}
+              </SkuSummary>
+              {filteredIndices.length > 0 && (
+                <div className="flex flex-col items-center justify-center mb-4 mt-4">
+                  <div className="text-[11px] font-semibold text-center">第 {selectedVariationIndex + 1} / {rows.length} 個變體 (只顯示有訂單的變體)</div>
+                  <div className="mt-2 flex items-center justify-center">
+                    <div className="w-8 flex items-center justify-center">
+                      {filteredPos > 0 ? (
+                        <Button size="icon-sm" variant="ghost" className="p-0" aria-label="Previous variation" onClick={prevFiltered}>
+                          <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M15 18l-6-6 6-6" />
+                          </svg>
+                        </Button>
+                      ) : (
+                        <div className="w-8 h-8" />
+                      )}
+                    </div>
+
+                    <div className="mx-2">
+                      <div className="text-xs px-3 py-1 bg-gray-100 rounded-full text-center">{rows[selectedVariationIndex].size} | {rows[selectedVariationIndex].color}</div>
+                    </div>
+
+                    <div className="w-8 flex items-center justify-center">
+                      {filteredPos >= 0 && filteredPos < filteredIndices.length - 1 ? (
+                        <Button size="icon-sm" variant="ghost" className="p-0" aria-label="Next variation" onClick={nextFiltered}>
+                          <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 6l6 6-6 6" />
+                          </svg>
+                        </Button>
+                      ) : (
+                        <div className="w-8 h-8" />
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {customersFor(rows[selectedVariationIndex]).length === 0 ? (
+                <EmptyWidget title="沒有候補訂單" subtitle="如單純補貨,請按下一步。" />
+              ) : (
+                <div className="bg-white p-4 space-y-3">
+                  <div className="flex items-baseline gap-3">
+                    <div className="text-sm text-gray-500">當前庫存: <span className="font-bold text-[#C4A59D]">{selectedCombined} 件</span></div>
+                    <div className="text-[11px] text-gray-400">(庫存 {selectedCurrent} + 補貨 {selectedRestockAmount})</div>
+                  </div>
+
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        checked={isAllSelectedFor(rows[selectedVariationIndex].id)}
+                        disabled={availableFor(rows[selectedVariationIndex].id) === 0}
+                        onCheckedChange={() => toggleSelectAllFor(rows[selectedVariationIndex].id)}
+                      />
+                      <div>訂單</div>
+                    </div>
+                    <div>數量</div>
+                  </div>
+
+                  <div className="space-y-2 divide-y divide-gray-200">
+                    {
+                      (() => {
+                        const varId = rows[selectedVariationIndex].id;
+                        const available = Number(rows[selectedVariationIndex].currentQty ?? 0) + Number(restockAmounts[varId] ?? 0);
+                        const selectedCount = ensureArray(selectedCustomers[varId]).length;
+                        return (
+                          <>
+                            {customersFor(rows[selectedVariationIndex]).map((c) => {
+                              const checked = ensureArray(selectedCustomers[varId]).includes(c.id);
+                              const disabled = !checked && selectedCount >= available && available > 0 ? true : (!checked && available === 0 ? true : false);
+                              return (
+                                <div
+                                  key={c.id}
+                                  className={`flex items-center justify-between p-3  ${disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={() => { if (!disabled) toggleCustomer(varId, c.id); }}
+                                  onKeyDown={(e) => {
+                                    if ((e.key === 'Enter' || e.key === ' ') && !disabled) {
+                                      e.preventDefault();
+                                      toggleCustomer(varId, c.id);
+                                    }
+                                  }}
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <div onClick={(e) => e.stopPropagation()}>
+                                      <Checkbox checked={checked} disabled={disabled} onCheckedChange={() => { if (!disabled) toggleCustomer(varId, c.id); }} />
+                                    </div>
+                                    <div>
+                                      <div className="text-xs font-semibold">{c.name}</div>
+                                      <div className="text-xs text-gray-500">訂單：{c.order}</div>
+                                    </div>
+                                  </div>
+                                  <div className="text-xs font-medium text-gray-700">{c.qty ?? ""}</div>
+                                </div>
+                              );
+                            })}
+                            {selectionErrors[varId] && (
+                              <div className="text-xs text-red-600 mt-2">{selectionErrors[varId]}</div>
+                            )}
+                          </>
+                        );
+                      })()
+                    }
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-6 flex justify-center">
+                <Button size="sm" className="bg-[#C4A59D] text-white" onClick={() => setStep(3)}>下一步</Button>
+              </div>
+            </div>
+          )}
+
+          {step === 3 && (
+            <div>
+              <SkuSummary sku={sku} rows={rows} preview={previewImage} />
+              <div className="h-[450px] overflow-y-auto">
+                <div className="text-xs font-semibold mt-4 text-left">分配名單</div>
+                {/* Variations that have orders/waitlist */}
+                <div className="rounded p-3 divide-y divide-gray-200">
+                  {rows.some((v) => (restockPayloadMap[v.id]?.order_ids?.length ?? 0) > 0 || (allocationPreview[v.id]?.length ?? 0) > 0) ? (
+                    rows
+                      .filter((v) => (restockPayloadMap[v.id]?.order_ids?.length ?? 0) > 0 || (allocationPreview[v.id]?.length ?? 0) > 0)
+                      .map((v) => {
+                      const payloadEntry = restockPayloadMap[v.id] ?? { variation_id: v.id, restock_amount: 0, order_ids: allocationPreview[v.id] ?? [] };
+                      return (
+                        <div key={v.id} className="py-3">
+                          <div className="flex items-center justify-between gap-4">
+                            <div className="flex items-start gap-2">
+                              <div className="font-semibold text-xs ">{v.size} | {v.color}</div>
+                            <div className="text-[11px] text-gray-500">總庫存: <span className="text-xs text-[#C4A59D]">{availableFor(v.id)} ( {v.currentQty} + <span className="text-xs text-[#C4A59D]">{payloadEntry.restock_amount}補貨)</span> </span></div>
+                            </div>
+                            <div className="text-xs text-gray-500 ">共{v.waitlist}件</div>
+                          </div>
+                          
+                          <div className="divide-y divide-gray-200 mt-2">
+                            {(payloadEntry.order_ids ?? []).length > 0 ? (
+                              (payloadEntry.order_ids ?? []).map((oid: string) => {
+                                const order = v.waitlistOrders?.find((o: any) => String(o.order_id) === String(oid));
+                                const displayName = order?.customer_name;
+                                const displayOrderNumber = order?.order_number;
+                                const displayQty = order?.quantity_needed;
+                                return (
+                                  <div key={oid} className="flex items-center py-2 px-2 gap-4">
+                                    <div className="flex-1 text-xs">{displayName}</div>
+                                    <div className="flex-1 text-xs text-gray-500">{displayOrderNumber}</div>
+                                    <div className="w-12 text-right text-xs">x {displayQty}</div>
+                                  </div>
+                                );
+                              })
+                            ) : (
+                              <div className="text-xs text-gray-500 py-2">未選擇訂單</div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                      })
+                  ) : (
+                    <EmptyWidget title="未選擇任何分配" />
+                  )}
+                </div>
+
+                {/* New section: variations without orders */}
+                <div className=" my-3" />
+                <div>
+                  <div className="text-xs font-semibold mb-2">單純補貨</div>
+                  <div className="p-3 divide-y divide-gray-200">
+                      {
+                        // header for the simple restock list
+                      }
+                      <div className="flex items-center text-xs text-gray-500 font-semibold mb-2">
+                        <div className="w-2/4">變體</div>
+                        <div className="w-2/4 flex justify-between">
+                          <div className="w-1/3 text-right">原有</div>
+                          <div className="w-1/3 text-right">補貨</div>
+                          <div className="w-1/3 text-right">合計</div>
+                        </div>
+                      </div>
+
+                      {rows
+                        .filter((v) => (v.waitlistOrders?.length ?? 0) === 0 && (allocationPreview[v.id]?.length ?? 0) === 0)
+                        .map((v) => (
+                          <div key={v.id} className="flex items-start py-2">
+                            <div className="text-xs w-2/4">{v.size} | {v.color}</div>
+                            <div className="text-xs text-gray-500 w-2/4 flex justify-between">
+                              <div className="w-1/3 text-right">{v.currentQty}</div>
+                              <div className="w-1/3 text-right">{restockAmounts[v.id] ?? 0}</div>
+                              <div className="w-1/3 text-right">{availableFor(v.id)}</div>
+                            </div>
+                          </div>
+                        ))}
+                    {rows.filter((v) => (v.waitlistOrders?.length ?? 0) === 0 && (allocationPreview[v.id]?.length ?? 0) === 0).length === 0 && (
+                      <div className="text-xs text-gray-500 text-center">所有變體皆有候補或已分配</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 flex justify-center">
+                <Button size="sm" className="bg-[#C4A59D] text-white" onClick={handleProcessRestock} disabled={processing}>
+                  {processing ? "處理中..." : "完成"}
+                </Button>
+              </div>
+              {/* debug UI removed */}
+            </div>
+          )}
+
+          {step === 4 && (
+            <div className="text-center py-8">
+              <div className="mx-auto w-20 h-20 rounded-full bg-[#F1F5F9] flex items-center justify-center mb-6">
+                <svg className="w-10 h-10 text-[#C4A59D]" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
+              </div>
+              <div className="text-lg font-bold mb-9">完成補貨</div>
+              <div className="text-sm text-gray-500 mb-6">分配訂單後，剩下的補貨已加入庫存</div>
+
+                    { /* debug logging moved to useEffect */ }
+                  <div className="inline-block text-left w-56">
+                    {rows.length === 0 ? (
+                      <EmptyWidget title="無補貨變體" subtitle="沒有變體資料可顯示。" />
+                    ) : (
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-xs text-gray-500">
+                            <th className="text-left">變體</th>
+                            <th className="text-right">配額</th>
+                            <th className="text-right">庫存</th>
+                            <th className="text-right">總數</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((r) => (
+                            <tr key={r.id} className="border-t">
+                                <td className="py-2">{r.size} | {r.color}</td>
+                                <td className="py-2 text-right">
+                                  <div className="text-xs text-gray-700">{(quotaFromRpc[r.id] ?? r.current_quota ?? '-')}</div>
+                                </td>
+                                <td className="py-2 text-right">
+                                  <div className="text-xs">{(r.currentQty ?? r.current_stock ?? '')}</div>
+                                </td>
+                                <td className="py-2 text-right font-bold">
+                                  <div className="text-xs">{availableFor(r.id)}</div>
+                                </td>
+                              </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+
+                  {/* debug UI removed */}
+
+              <div className="mt-6">
+                <Button size="sm" className="bg-[#C4A59D] text-white" onClick={() => { handleClose(); }}>確認</Button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <AlertDialogFooter />
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}

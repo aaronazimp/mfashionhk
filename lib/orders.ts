@@ -6,6 +6,7 @@ export type Registration = {
   customerName: string;
   whatsapp: string;
   variation: string;
+  variationId?: number;
   timestamp: Date;
   status: "pending" | "in-stock" | "out-of-stock" | "completed" | "waitlist" | "confirmed" | "paid" | "verified" | "void";
   adminAction?: "confirm" | "out-of-stock";
@@ -18,6 +19,32 @@ export type Registration = {
 
 // Helper to map DB response to Registration type
 export function mapSupabaseOrderToRegistration(order: any): Registration {
+  // Debug logging for variation_id issue
+  const variationIdValue = order.variation_id;
+  const variationIdNumber = variationIdValue ? Number(variationIdValue) : undefined;
+  
+  console.log('[Orders Mapping] Mapping order:', {
+    orderId: order.id,
+    variation_id: variationIdValue,
+    variation_id_type: typeof variationIdValue,
+    has_variation_id: 'variation_id' in order,
+    computed_variationId: variationIdNumber,
+    variation_snapshot: order.variation_snapshot,
+    sku_code_snapshot: order.sku_code_snapshot
+  });
+  
+  if (!variationIdNumber) {
+    // Lower-severity logging: variation_id can legitimately be null for some legacy rows.
+    // Keep this as debug to avoid alarming users when toggling UI state.
+    console.debug('[Orders Mapping] variation_id missing or invalid for order (this may be expected for legacy rows):', {
+      orderId: order.id,
+      variation_id: variationIdValue,
+      type: typeof variationIdValue,
+      allKeys: Object.keys(order),
+      variationRelatedKeys: Object.keys(order).filter(k => k.toLowerCase().includes('variation'))
+    });
+  }
+  
   let status: Registration["status"] = "pending";
   const s = (order.status || "").toLowerCase().trim();
   
@@ -46,6 +73,7 @@ export function mapSupabaseOrderToRegistration(order: any): Registration {
     customerName: order.customer_name,
     whatsapp: order.whatsapp,
     variation: order.variation_snapshot || "",
+    variationId: variationIdNumber,
     timestamp: new Date(order.created_at),
     status: status,
     imageUrl,
@@ -104,4 +132,46 @@ export function groupAndSortRegistrations(
 
   arr.sort((a, b) => b.latest.getTime() - a.latest.getTime());
   return arr;
+}
+
+// Shared types for order modals / RPC responses
+export type Item = {
+  price?: number
+  status?: string
+  item_id?: string
+  line_item_id?: string
+  sku_id?: number
+  variation_id?: number
+  remark?: string | null
+  remarks?: string | null
+  quantity?: number
+  sku_code?: string
+  thumbnail?: string
+  variation?: string
+}
+
+export type Order = {
+  order_number?: string
+  order_total_items?: number
+  order_total_amount?: number
+  order_total?: number
+  order_status?: string
+  transaction_id?: string
+  items?: Item[]
+}
+
+export type RpcResponse = {
+  orders?: Order[]
+  whatsapp?: string
+  customer_name?: string
+  grand_total_items?: number
+  grand_total_amount?: number
+  total_orders_count?: number
+  summary?: {
+    status_counts?: Record<string, { items?: number; orders?: number; actions?: number }>
+    all_items_count?: number
+    all_orders_count?: number
+    all_actions_count?: number
+  }
+  status_priority?: string[]
 }

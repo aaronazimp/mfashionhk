@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Lock } from "lucide-react"
+import * as Lucide from "lucide-react"
 
 import {
   InputOTP,
@@ -58,7 +58,7 @@ export default function AdminLayout({
           <Card className="w-full max-w-sm shadow-lg">
             <CardHeader className="text-center space-y-2">
               <div className="mx-auto bg-gray-100 p-3 rounded-full w-fit">
-                <Lock className="w-6 h-6 text-gray-600" />
+                <Lucide.Lock className="w-6 h-6 text-gray-600" />
               </div>
               <CardTitle className="text-2xl">Admin Access</CardTitle>
               <CardDescription>

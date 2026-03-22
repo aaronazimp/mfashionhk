@@ -1,522 +1,567 @@
+
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import React, { useState, useEffect } from "react";
+import { supabase } from "../../../lib/supabase";
+import { getPaymentPageData } from "../../../lib/orderService";
+import type { PaymentPageOrder, PaymentPageItem } from "../../../lib/products";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
-import { CreditCard, Banknote, QrCode, Smartphone, Loader2, CheckCircle2 } from "lucide-react";
-import { createClient } from "@supabase/supabase-js";
-import { InvoiceViewer } from "@/components/invoice-viewer";
+import * as Lucide from "lucide-react";
 import { PaymentUploadForm } from "@/components/payment-upload-form";
+import { CountdownTimer } from "@/components/countdown-timer";
 import Link from "next/link";
-import html2canvas from "html2canvas";
 
-import { uploadInvoiceAndSave } from "../actions";
-
-// Initialize Supabase client for client-side usage
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-const supabase = createClient(supabaseUrl, supabaseKey);
-
-export interface Order {
-  id: string;
-  order_number?: string;
-  created_at: string;
-  sku: string;
-  sku_id?: number;
-  price: number;
-  product_name: string;
-  customer_name?: string;
-  status: string;
-  receipt_url?: string;
-  sku_img_url?: string;
-  base64_image?: string;
-  sku_code_snapshot?: string;
-  variation_snapshot?: string;
-  quantity?: number;
-  whatsapp?: string;
-  payment_proof_url?: string;
-  deadline?: string;
+// Custom timer for HH:MM:SS (hours:minutes:seconds)
+function CustomCountdownTimer({ targetDate, onEnd }: { targetDate: Date, onEnd?: () => void }) {
+  const [timeLeft, setTimeLeft] = useState({ hours: 0, minutes: 0, seconds: 0 });
+  const [ended, setEnded] = useState(false);
+  useEffect(() => {
+    const calculateTimeLeft = () => {
+      const now = new Date().getTime();
+      const target = targetDate.getTime();
+      const difference = target - now;
+      if (difference > 0) {
+        const hours = Math.floor(difference / (1000 * 60 * 60));
+        const minutes = Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((difference % (1000 * 60)) / 1000);
+        setTimeLeft({ hours, minutes, seconds });
+      } else {
+        setTimeLeft({ hours: 0, minutes: 0, seconds: 0 });
+        if (!ended) {
+          setEnded(true);
+          onEnd && onEnd();
+        }
+      }
+    };
+    calculateTimeLeft();
+    const timer = setInterval(calculateTimeLeft, 1000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetDate]);
+  const formatNumber = (num: number) => num.toString().padStart(2, "0");
+  return (
+    <span className="font-mono font-bold tracking-widest tabular-nums text-red-500">
+      {formatNumber(timeLeft.hours)}時{formatNumber(timeLeft.minutes)}分{formatNumber(timeLeft.seconds)}秒
+    </span>
+  );
 }
 
-export default function PaymentClient({ order }: { order: Order }) {
-  const [receiptUrl, setReceiptUrl] = useState<string | null>(order.receipt_url || null);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [skuImageBase64, setSkuImageBase64] = useState<string | null>(order.base64_image || null);
-  const [showInvoice, setShowInvoice] = useState(false);
-  const invoiceRef = useRef<HTMLDivElement>(null);
-  const hasGeneratedRef = useRef(false);
+// Simple client-side Error Boundary to display render errors during development
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props as any);
+    this.state = { error: null };
+  }
 
-  const isPaymentSubmitted = ['paid', 'verified', 'completed'].includes(order.status) || !!order.payment_proof_url;
-  
-  // Pre-load image as Base64 to ensure html2canvas can capture it
-  useEffect(() => {
-    if (order.sku_img_url && !skuImageBase64) {
-      const img = new Image();
-      img.crossOrigin = "Anonymous";
-      // Use proxy to avoid CORS issues
-      const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(order.sku_img_url)}`;
-      img.src = proxyUrl;
-      img.onload = () => {
-        try {
-          const canvas = document.createElement("canvas");
-          // Resize if too large to prevent canvas errors/memory issues
-          const MAX_SIZE = 800;
-          let width = img.width;
-          let height = img.height;
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: any) {
+    console.error("PaymentClient render error:", error, info);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="min-h-screen p-6 bg-red-50 flex items-start justify-center">
+          <div className="max-w-3xl w-full bg-white border border-red-200 rounded p-4">
+            <h3 className="text-lg font-semibold text-red-700">Client render error</h3>
+            <pre className="mt-2 text-xs text-red-600 whitespace-pre-wrap">{String(this.state.error && this.state.error.stack ? this.state.error.stack : this.state.error)}</pre>
+            {/* Transaction ID footer */}
+          </div>
           
-          if (width > MAX_SIZE || height > MAX_SIZE) {
-             if (width > height) {
-                 height = Math.round((height * MAX_SIZE) / width);
-                 width = MAX_SIZE;
-             } else {
-                 width = Math.round((width * MAX_SIZE) / height);
-                 height = MAX_SIZE;
-             }
-          }
-
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext("2d");
-          if (ctx) {
-            ctx.drawImage(img, 0, 0, width, height);
-            const dataURL = canvas.toDataURL("image/png");
-            setSkuImageBase64(dataURL);
-          }
-        } catch (e) {
-          console.warn("Failed to convert image to base64", e);
-        }
-      };
-      img.onerror = (e) => {
-        console.warn("Failed to load image for base64 conversion", e);
-        // Set to empty string or keep null to signal we can proceed without image
-        setSkuImageBase64("failed"); 
-      };
+        </div>
+      );
     }
-  }, [order.sku_img_url, skuImageBase64]);
+    return this.props.children as React.ReactElement;
+  }
+}
 
-  // Auto-Invoice Generation Hook
+// Use shared PaymentPageOrder from lib/products
+
+
+export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
+  // Helper to fetch latest order and update state
+  const fetchOrder = async (id: string, setLiveOrder: React.Dispatch<React.SetStateAction<PaymentPageOrder>>) => {
+    try {
+      const data = await getPaymentPageData(id);
+      if (!data) return;
+      let payload: any = data;
+      if (Array.isArray(payload)) {
+        payload = payload[0] ?? payload;
+      }
+      if (!payload) return;
+
+      // If RPC returns a wrapper object like { get_payment_page_data: { orders: {...}, ... } }
+      const core = payload.get_payment_page_data ?? payload;
+
+      const normalized: any = {};
+      // If returned as order-centric 'orders' map, use it as pay_now_groups
+      if (core.orders && typeof core.orders === 'object') {
+        normalized.pay_now_groups = core.orders;
+        // derive waitlist / cancelled lists for compatibility
+        const allItems: any[] = Object.values(core.orders).flat();
+        normalized.items_waitlist = allItems.filter((it: any) => it.status === 'waitlist');
+        normalized.items_cancelled = allItems.filter((it: any) => it.status === 'cancelled');
+      }
+
+      // Copy other top-level metadata if present
+      const fieldsToCopy = ['status', 'subtotal', 'whatsapp', 'shipping_fee', 'total_to_pay', 'transaction_id', 'payment_deadline', 'payment_proof_url'];
+      fieldsToCopy.forEach((f) => {
+        if (core[f] !== undefined) normalized[f] = core[f];
+      });
+
+      // Fallback: if payload contains items directly, merge them too
+      if (!normalized.pay_now_groups && payload.pay_now_groups) normalized.pay_now_groups = payload.pay_now_groups;
+
+      setLiveOrder((prev: PaymentPageOrder) => ({ ...prev, ...normalized }));
+    } catch {}
+  };
+  // State for live order status
+  const [liveOrder, setLiveOrder] = useState<PaymentPageOrder>(order);
+
+  // Subscribe to Supabase Realtime for instant updates
   useEffect(() => {
-    const generateInvoice = async () => {
-        if (isGenerating) return; 
-        if (hasGeneratedRef.current) return;
-        
-        setIsGenerating(true);
-        hasGeneratedRef.current = true;
-
-        try {
-            // Wait a moment for layout to settle and image to render
-            await new Promise(resolve => setTimeout(resolve, 800));
-
-            if (!invoiceRef.current) {
-                console.error("Invoice template not found");
-                return;
-            }
-
-            const canvas = await html2canvas(invoiceRef.current, {
-                scale: 2, 
-                useCORS: true,
-                allowTaint: true,
-                logging: true,
-                backgroundColor: "#ffffff", 
-                imageTimeout: 15000
-            });
-
-            // Convert canvas to blob
-            const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
-            if (!blob) throw new Error("Failed to create blob");
-
-            // Define file path
-            const fileName = `reel_invoice_${order.id}.png`;
-            
-            // Use Server Action to upload (Bypasses RLS)
-            const formData = new FormData();
-            formData.append('file', blob, fileName);
-            formData.append('fileName', fileName);
-            formData.append('orderId', order.id);
-
-            const result = await uploadInvoiceAndSave(formData);
-
-            if (result.error) {
-                console.error("Server upload failed:", result.error);
-                throw new Error(result.error);
-            }
-
-            const publicUrl = result.publicUrl;
-            if (!publicUrl) throw new Error("No public URL returned");
-
-            // Append timestamp to bust cache
-            setReceiptUrl(`${publicUrl}?t=${Date.now()}`);
-
-        } catch (error) {
-            console.error("Error generating invoice:", error);
-            hasGeneratedRef.current = false; // Allow retry on error
-        } finally {
-            setIsGenerating(false);
+    // Listen to changes on the reels_orders table for this order
+    const channel = supabase
+      .channel('reels-order-status')
+      .on(
+        'postgres_changes',
+        {
+          
+          event: '*',
+          schema: 'public',
+          table: 'reels_orders',
+          // No filter for debugging: listen to all changes
+        },
+        (payload) => {
+          console.log('[Supabase Realtime] reels_orders payload:', payload);
+          if (payload.new) {
+            setLiveOrder((prev) => ({ ...prev, ...payload.new }));
+          }
         }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order.id]);
 
-    // Trigger generation conditions
-    const shouldGenerate = !receiptUrl && !isGenerating && !hasGeneratedRef.current;
-    
-    // Check if image is ready or failed (so we don't wait forever)
-    // If there is no sku_img_url, we are ready.
-    // If there IS a sku_img_url, we wait until skuImageBase64 is either the data string or "failed".
-    const isImageReady = !order.sku_img_url || (order.sku_img_url && skuImageBase64);
+  // Fetch latest order once on mount to ensure we have pay_now_groups, cancelled, and waitlist data
+  useEffect(() => {
+    fetchOrder(order.id, setLiveOrder);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order.id]);
 
-    if (shouldGenerate && isImageReady) {
-        generateInvoice();
+  // Log order.deadline for debugging
+  useEffect(() => {
+    const d = liveOrder.payment_deadline || liveOrder.deadline;
+    if (d) {
+      console.log('CountdownTimer deadline:', d);
     }
-  }, [order.id, receiptUrl, isGenerating, order.sku_img_url, skuImageBase64]);
+  }, [liveOrder.payment_deadline, liveOrder.deadline]);
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('payme');
 
+  // Use pay_now_groups as the canonical source for payable items grouped by original order number
+  const payNowGroups: Record<string, PaymentPageItem[]> = (liveOrder.pay_now_groups ?? {}) as Record<string, PaymentPageItem[]>;
+  const waitlistItems = liveOrder.items_waitlist ?? [];
+  const cancelledItems = liveOrder.items_cancelled ?? [];
 
-  // Construct PayMe link
-  const payMeLink = `https://payme.hsbc/yourname/${(order.price || 0).toFixed(2)}`;
+  // Debug help: log counts so we can confirm data present
+  // eslint-disable-next-line no-console
+  console.debug('[PaymentClient] pay_now_groups keys', Object.keys(payNowGroups), 'waitlist:', waitlistItems.length, 'cancelled:', cancelledItems.length);
+
+  // subtotal / displayTotal strictly derived from items within pay_now_groups
+  const subtotal = Object.values(payNowGroups)
+    .flat()
+    .reduce((sum: number, it: any) => sum + (Number(it.row_total ?? (it.price * it.quantity)) || 0), 0);
+  const displayTotal = subtotal;
+  // Prefer server-provided total_to_pay when available (RPC result), otherwise derive from items
+  const displayAmount = Number(liveOrder.total_to_pay ?? displayTotal ?? 0);
+
+  const isPaymentSubmitted = ['paid', 'verified', 'completed'].includes(liveOrder.status ?? '') || !!liveOrder.payment_proof_url;
+
+  // If the order is already paid (or has a payment proof), auto-advance to the confirmation step
+  useEffect(() => {
+    // If payment becomes submitted while the user is mid-flow (step 2 or 3), jump to confirmation.
+    // Do not force users back to confirmation on initial load so they can still view items (step 1).
+    if (isPaymentSubmitted && currentStep > 1 && currentStep !== 4) {
+      goToStep(4);
+    }
+  }, [isPaymentSubmitted, currentStep]);
+
+  // Guarded step navigation: allow viewing step 1 after payment, but block steps 2 and 3.
+  const goToStep = (step: 1 | 2 | 3 | 4) => {
+    if (isPaymentSubmitted && (step === 2 || step === 3)) return;
+    setCurrentStep(step);
+  };
+  // Show an "under review" banner when status is 'paid' but not yet verified/completed
+  const isUnderReview = (liveOrder.status ?? '') === 'paid' && !['verified', 'completed'].includes(liveOrder.status ?? '');
+
+  // Simple PayMe link placeholder
+  const payMeLink = `#`;
+
+  const handlePaymentMethodSelected = () => {
+    goToStep(3);
+  };
+
+  const handlePaymentProofUploaded = () => {
+    goToStep(4);
+  };
 
   return (
-    <div className="min-h-screen bg-[#FFF4E5] flex flex-col items-center justify-center p-4">
-      
-      {/* Hidden Invoice Template - Modern Redesign (Chinese) */}
-      <div 
-        ref={invoiceRef}
-        className="w-[800px] p-12 font-sans box-border"
-        style={{ 
-            position: 'absolute', 
-            top: 0, 
-            left: '-9999px', 
-            zIndex: -100,
-            backgroundColor: '#ffffff',
-            color: '#111827',
-            fontFamily: '"Microsoft JhengHei", "Heiti TC", sans-serif'
-        }} 
-      >
-          {/* Header Section */}
-          <div className="flex justify-between items-start mb-10">
-              {/* Left: Brand */}
-              <div>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src="/m+logo_final_colorBG.png" alt="M Fashion" className="h-16 mb-4 object-contain" />
-                  <div className="text-xl font-bold text-[#A87C73] mb-2 tracking-tight">MFashion</div>
-                  <div className="text-sm text-[#6b7280]">荃灣南豐中心新之城2樓25號鋪</div>
-                  <div className="flex items-center gap-1 text-sm text-[#6b7280] mt-3">
-                    <svg viewBox="0 0 24 24" fill="#25D366" className="w-4 h-4 shrink-0">
-                        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
-                    </svg>
-                    <span>+852 5729 0882</span>
-                 </div>
-              </div>
-              
-              {/* Right: Invoice Info */}
-              <div className="text-right">
-                <div className="text-sm uppercase tracking-widest text-[#A87C73] font-bold mb-1">發票 / 收據</div>
-                <div className="text-xl font-black text-[#111827]">#{order.order_number || order.id.slice(0, 8).toUpperCase()}</div>
-              </div>
-          </div>
-
-          {/* Customer & Info Block */}
-          <div className="rounded-xl p-8 mb-10" style={{ backgroundColor: '#f9fafb' }}>
-              <div className="grid grid-cols-2 gap-12">
-                  {/* Col 1: Bill To */}
-                  <div>
-                      <h3 className="text-xs font-bold uppercase tracking-widest text-[#A87C73] mb-4">客戶</h3>
-                      <div className="font-bold text-xl text-[#111827] mb-1">{order.customer_name || '訪客'}</div>
-                      <div className="flex items-center gap-2 text-[#6b7280] font-medium">
-                          <span className="leading-none">{order.whatsapp || '未提供聯絡電話'}</span>
-                      </div>
+    <ErrorBoundary>
+      <div className="min-h-screen bg-[#FFF4E5] flex items-center justify-center p-4">
+        <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in duration-500 relative z-[9999]">
+          <div className="p-6 md:p-8 space-y-6">
+            {/* Check if order is cancelled */}
+            {liveOrder.status === 'cancelled' ? (
+              <div className="min-h-screen bg-[#FFF4E5] flex items-center justify-center p-4 font-sans">
+                <div className="bg-white p-8 rounded-2xl shadow-xl text-center max-w-md w-full space-y-6">
+                  <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-10 h-10 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                   </div>
-                  
-                  {/* Col 2: Order Details */}
-                   <div className="flex flex-col items-end text-right">
-                       <h3 className="text-xs font-bold uppercase tracking-widest text-[#A87C73] mb-4">訂單詳情</h3>
-                       <div className="space-y-2">
-                           <div className="flex items-center gap-4 justify-end">
-                               <span className="text-[#6b7280]">日期</span>
-                               <span className="font-medium text-[#111827]">
-                                   {new Date().toLocaleDateString('zh-HK', { year: 'numeric', month: 'long', day: 'numeric'})}
-                               </span>
-                           </div>
-                           <div className="flex items-center gap-4 justify-end">
-                               <span className="text-[#6b7280]">付款方式</span>
-                               <span className="font-medium text-[#111827]">網上支付 / PayMe / FPS</span>
-                           </div>
-                       </div>
+                  <div className="space-y-2">
+                    <h1 className="text-2xl font-bold text-gray-900">訂單已取消</h1>
                   </div>
-              </div>
-          </div>
-
-          {/* Product Section */}
-          <div className="mb-12">
-              <h3 className="text-lg font-bold text-[#A87C73] mb-6 pb-4 border-b" style={{ borderColor: '#f3f4f6' }}>訂購項目</h3>
-              
-              {/* Modern Flex Row Item */}
-              <div className="flex items-start py-4">
-                  {/* Image */}
-                  <div className="w-24 h-24 shrink-0 border bg-white shadow-sm flex items-center justify-center relative overflow-hidden" style={{ borderColor: '#e5e7eb', borderRadius: '8px' }}>
-                      {/* Try Base64 -> Try Proxy -> Try Original -> Fallback Icon */}
-                      {(skuImageBase64 && skuImageBase64 !== "failed") ? (
-                          /* eslint-disable-next-line @next/next/no-img-element */
-                          <img 
-                              src={skuImageBase64} 
-                              alt="Product" 
-                              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                          />
-                      ) : (order.sku_img_url) ? (
-                           /* eslint-disable-next-line @next/next/no-img-element */
-                           <img 
-                              src={`/api/proxy-image?url=${encodeURIComponent(order.sku_img_url)}`}
-                              alt="Product" 
-                              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                              crossOrigin="anonymous"
-                          />
-                      ) : (
-                          <div className="text-[#9ca3af]">
-                              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                          </div>
-                      )}
-                  </div>
-
-                  {/* Details */}
-                  <div className="flex-1 ml-6 pt-1">
-                      <div className="font-bold text-xl text-[#111827] mb-2">{order.sku_code_snapshot || order.sku || order.product_name}</div>
-                      <div className="flex flex-col gap-1 text-sm text-[#6b7280] font-medium">
-                          <div>規格: <span className="text-[#111827]">{order.variation_snapshot || '單色 / One Size'}</span></div>
-                          <div>數量: <span className="text-[#111827]">{order.quantity || 1}</span></div>
-                      </div>
-                  </div>
-
-                  {/* Price */}
-                  <div className="text-xl font-bold text-[#111827] tabular-nums pt-1">
-                      HK$ {(order.price || 0).toFixed(2)}
-                  </div>
-              </div>
-              {/* Divider */}
-              <div className="border-b mt-4" style={{ borderColor: '#f3f4f6' }}></div>
-          </div>
-
-          {/* Footer & Totals */}
-          <div className="flex flex-col items-end">
-              <div className="text-right w-1/2 ">
-                  <div className="flex justify-between items-center mb-6 text-[#6b7280] font-medium text-lg border-b pb-4" style={{ borderColor: '#f3f4f6' }}>
-                      <span>小計</span>
-                      <span>HK$ {(order.price || 0).toFixed(2)}</span>
-                  </div>
-                  
-                  <div className="flex flex-col items-end gap-2">
-                      <span className="text-[#6b7280] font-medium uppercase tracking-wide text-sm">總金額</span>
-                      <span className="text-5xl font-black text-[#A87C73] tracking-tight tabular-nums">
-                         HK$ {(order.price || 0).toFixed(2)}
-                      </span>
-                  </div>
-              </div>
-          </div>
-
-          {/* Bottom Branding */}
-          <div className="mt-20 pt-8 border-t flex justify-between text-sm text-[#9ca3af]" style={{ borderColor: '#f3f4f6' }}>
-             <div>感謝您的惠顧</div>
-             <div className="flex items-center gap-2">
-                 <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-[#1877F2]">
-                     <path d="M9.101 23.691v-7.98H6.627v-3.667h2.474v-1.58c0-4.085 1.848-5.978 5.858-5.978.401 0 .955.042 1.468.103a8.68 8.68 0 0 1 1.141.195v3.325a8.623 8.623 0 0 0-.653-.036c-2.148 0-2.971.956-2.971 3.594v.376h3.428l-.348 3.667h-3.08v7.98h-4.844Z"></path>
-                 </svg>
-                 <span>m.plus.fashion.hk</span>
-             </div>
-          </div>
-      </div>
-
-      <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in duration-500">
-        
-        {/* Content Section */}
-        <div className="p-6 md:p-8 space-y-6">
-          <div className="text-center">
-            <h1 className="text-2xl font-bold text-[#A87C73]">
-              {isPaymentSubmitted ? "我們正確認你的訂單" : "確認付款"}
-            </h1>
-            {order.order_number && (
-               <div className="inline-block px-3 py-1 bg-gray-100 text-[#A87C73] text-sm font-bold font-mono rounded-full mt-2 tracking-wide">
-                   訂單號: {order.order_number}
-               </div>
-            )}
-            <div className="flex flex-col items-center">
-                {!isPaymentSubmitted && (
-                  <p className="text-gray-500 mt-2 text-sm">
-                    請完成購買 <span className="font-semibold text-gray-700">{order.product_name}</span>。
-                  </p>
-                )}
-                  <button 
-                        onClick={() => setShowInvoice(true)}
-                        className="mt-3 bg-white hover:bg-gray-50 text-[#A87C73] text-xs font-bold py-2 px-4 rounded-full border border-[#A87C73]/30 shadow-sm transition-all flex items-center gap-2"
-                    >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                        查看訂單發票
-                  </button>
-                  {showInvoice && (
-                     <InvoiceViewer 
-                        url={receiptUrl} 
-                        alt="Invoice" 
-                        initiallyOpen={true} 
-                        onClose={() => setShowInvoice(false)} 
-                        downloadFileName={`Invoice-${order.order_number || order.id}.png`}
-                        isLoading={!receiptUrl}
-                     />
-                  )}
-            </div>
-          </div>
-
-          <div className="space-y-6">
-            {!isPaymentSubmitted && (
-             <>
-             <Tabs defaultValue="payme" className="w-full">
-               <TabsList className="grid w-full grid-cols-4 h-auto p-1 bg-gray-100/50 rounded-xl">
-                <TabsTrigger value="payme" className="flex flex-col gap-1 py-3 text-xs data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-[#E53535]">
-                  <Smartphone className="w-5 h-5" />
-                  PayMe
-                </TabsTrigger>
-                <TabsTrigger value="fps" className="flex flex-col gap-1 py-3 text-xs data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-[#00ab4e]">
-                  <Banknote className="w-5 h-5" />
-                  轉數快
-                </TabsTrigger>
-                <TabsTrigger value="wallets" className="flex flex-col gap-1 py-3 text-xs data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-[#00C250]">
-                  <QrCode className="w-5 h-5" />
-                  電子錢包
-                </TabsTrigger>
-                <TabsTrigger value="card" className="flex flex-col gap-1 py-3 text-xs data-[state=active]:bg-white data-[state=active]:shadow-sm">
-                  <CreditCard className="w-5 h-5" />
-                  信用卡
-                </TabsTrigger>
-              </TabsList>
-              
-              <div className="mt-6 min-h-[180px]">
-                {/* PayMe Option */}
-                <TabsContent value="payme" className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div className="bg-red-50/50 border border-red-100 rounded-xl p-4 text-center space-y-3">
-                    <p className="text-sm text-gray-600">
-                      點擊下方按鈕打開 PayMe 應用程式付款。
-                    </p>
-                    <Link
-                      href={payMeLink}
+                  <p className="text-gray-500">
+                    此訂單已被取消，無法進行付款。<br/>
+                    如果您需要協助，
+                    <a
+                      href="https://wa.me/85257290882"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="block w-full"
+                      className="text-green-600 underline hover:text-green-700"
+                    >請聯繫我們的客戶服務。</a>
+                  </p>
+                  <a href="/flash-sale" className="inline-block mt-4 px-6 py-2 bg-[#A87C73] text-white rounded-lg font-semibold hover:bg-[#986B62] transition">
+                    返回選購商品
+                  </a>
+                  <div className="pt-6 border-t border-gray-100">
+                    <p className="text-[11px] text-gray-400 font-mono">流水號: {liveOrder.transaction_id || liveOrder.order_number || liveOrder.id.slice(0, 8)}</p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* (Timer moved below items, above total) */}
+
+                
+                {/* Step Indicator */}
+                <div className="flex items-center justify-center gap-2 mb-4">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${currentStep >= 1 ? 'bg-[#A87C73] text-white' : 'bg-gray-200 text-gray-600'}`}>1</div>
+                  <div className={`h-1 flex-1 ${currentStep >= 2 ? 'bg-[#A87C73]' : 'bg-gray-200'}`}></div>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${currentStep >= 2 ? 'bg-[#A87C73] text-white' : 'bg-gray-200 text-gray-600'}`}>2</div>
+                  <div className={`h-1 flex-1 ${currentStep >= 3 ? 'bg-[#A87C73]' : 'bg-gray-200'}`}></div>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${currentStep >= 3 ? 'bg-[#A87C73] text-white' : 'bg-gray-200 text-gray-600'}`}>3</div>
+                  <div className={`h-1 flex-1 ${currentStep >= 4 ? 'bg-[#A87C73]' : 'bg-gray-200'}`}></div>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${currentStep >= 4 ? 'bg-[#A87C73] text-white' : 'bg-gray-200 text-gray-600'}`}>4</div>
+                </div>
+
+                {/* Step 1: Item Breakdown */}
+                {currentStep === 1 && (
+                  <>
+                    {/* transaction id moved below the amount */}
+
+                    {/* Items Breakdown */}
+                    <div className="mb-4 w-full">
+                      <div className="bg-white rounded-lg p-3">
+                        <p className="text-sm text-zinc-600 mb-2">以下是您訂購的產品，核對無誤後進入下一步付款</p>
+                        <h4 className="text-sm font-medium text-[#6b7280] mb-3 text-center">項目明細</h4>
+                        {Object.keys(payNowGroups).length > 0 ? (
+                          Object.entries(payNowGroups).map(([origOrderNumber, items]) => (
+                            <div key={origOrderNumber} className="mb-3">
+                              <div className="bg-white rounded-lg shadow-md overflow-hidden">
+                                <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between bg-gray-50">
+                                  <div className="text-xs text-zinc-500">訂單 #{origOrderNumber}</div>
+                                </div>
+                                <div className="divide-y divide-gray-100">
+                                {items.map((itRaw: any) => {
+                                  const it = itRaw as any;
+                                  const img = it.image_url ?? it.sku_img_url;
+                                  const title = it.sku_code ?? it.sku_code_snapshot ?? it.sku ?? '';
+                                  const variation = it.variation_snapshot ?? it.variation ?? '';
+                                    return (
+                                    <div key={it.id} className="flex items-start justify-between py-2 px-3">
+                                      <div className="flex items-center gap-3">
+                                        <div className="w-12 h-12 rounded-md overflow-hidden bg-zinc-100 flex-shrink-0">
+                                          {img ? (
+                                            <img src={`/api/proxy-image?url=${encodeURIComponent(img ?? '')}`} alt={title} className="w-full h-full object-cover object-top" onError={(e)=>{(e.currentTarget as HTMLImageElement).src='/placeholder.svg'}} />
+                                          ) : (
+                                            <div className="w-full h-full bg-zinc-200" />
+                                          )}
+                                        </div>
+                                        <div>
+                                          <div className="text-sm font-extrabold font-mono text-zinc-600 max-w-[200px] truncate">{title}</div>
+                                          <div className="text-xs text-zinc-500 mt-1">{variation}{variation ? ' ' : ''}<span className="ml-1">x{it.quantity}</span></div>
+                                          
+                                        </div>
+                                      </div>
+                                      <div className="text-right self-start">
+                                        <div className={`font-bold ${it.status === 'waitlist' || it.status === 'cancelled' ? 'line-through text-zinc-500' : ''}`}>$ {(Number(it.row_total ?? (it.price * it.quantity)) || 0).toFixed(0)}</div>
+                                        {/* short status indicator on the price side for clarity */}
+                                        <div className="mt-1">
+                                          {it.status === 'waitlist' && <span className="text-xs inline-block bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full">候補中</span>}
+                                          {it.status === 'confirmed' && <span className="text-xs inline-block bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full">已確認</span>}
+                                          {it.status === 'cancelled' && <span className="text-xs inline-block bg-gray-50 text-gray-600 px-2 py-0.5 rounded-full">已取消</span>}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-sm text-zinc-500">無明細</div>
+                        )}
+
+                        {/* Cancelled Items (inside main container) */}
+                        {cancelledItems && cancelledItems.length > 0 && (
+                          <div className="mt-4">
+                            <h4 className="text-sm font-medium text-[#6b7280] mb-2">已取消項目</h4>
+                            <div className="space-y-2">
+                              {cancelledItems.map((itRaw: any, idx: number) => {
+                                const it = itRaw as any;
+                                const img = it.image_url ?? it.sku_img_url;
+                                const title = it.sku_code ?? it.sku ?? it.sku_code_snapshot ?? it.sku_code_snapshot ?? it.product_name ?? `Item ${idx+1}`;
+                                const variation = it.variation_snapshot ?? it.variation ?? it.variation_snapshot ?? '';
+                                return (
+                                  <div key={it.id ?? idx} className="flex items-start justify-between py-2 px-3 opacity-60">
+                                    <div className="flex items-center gap-3">
+                                      <div className="w-12 h-12 rounded-md overflow-hidden bg-zinc-100 flex-shrink-0">
+                                        {img ? (
+                                          <img src={`/api/proxy-image?url=${encodeURIComponent(img ?? '')}`} alt={title} className="w-full h-full object-cover object-top" onError={(e)=>{(e.currentTarget as HTMLImageElement).src='/placeholder.svg'}} />
+                                        ) : (
+                                          <div className="w-full h-full bg-zinc-200" />
+                                        )}
+                                      </div>
+                                      <div>
+                                        <div className="text-sm font-extrabold line-through text-zinc-500">{title}</div>
+                                        <div className="text-xs text-zinc-400">{variation} <span className="ml-1">x{it.quantity}</span></div>
+                                        {it.remark && <div className="text-xs text-zinc-400 mt-1">{it.remark}</div>}
+                                      </div>
+                                    </div>
+                                    <div className="text-sm text-zinc-500 line-through self-start">{'$' + (Number(it.row_total ?? (it.price * it.quantity)) || 0).toFixed(0)}</div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    
+
+                    {/* Waitlist section removed - items are shown grouped per order with status badges */}
+
+                    
+
+                    {/* Payment Deadline Timer (moved above total) */}
+                    {(liveOrder.payment_deadline || liveOrder.deadline) && !isPaymentSubmitted && liveOrder.status !== 'cancelled' && (
+                      <div className="mb-4 text-sm text-gray-700 rounded p-2 text-center">
+                        付款截止時間: <CustomCountdownTimer targetDate={new Date((liveOrder.payment_deadline || liveOrder.deadline) as string)} onEnd={() => fetchOrder(order.id, setLiveOrder)} />
+                      </div>
+                    )}
+
+                    <div className="text-center">
+                      <div className="text-xl font-black text-[#A87C73] tracking-tight tabular-nums">應付金額 HK$ {displayAmount.toFixed(0)}</div>
+                    </div>
+
+                    <div className="text-center">
+                      <button
+                        onClick={() => goToStep(2)}
+                        className={`w-full bg-[#A87C73] hover:bg-[#986B62] text-white font-bold py-3 px-4 rounded-xl shadow-md transition-transform active:scale-95 ${isPaymentSubmitted ? 'opacity-60 cursor-not-allowed hover:bg-[#A87C73]' : ''}`}
+                        disabled={isPaymentSubmitted}
+                      >
+                        {isPaymentSubmitted ? '付款已提交' : '下一步：選擇付款方式'}
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {/* Step 2: Choose Payment Method */}
+                {currentStep === 2 && (
+                  <>
+                    <div className="text-center">
+                      <h1 className="text-lg font-semibold text-gray-600">選擇付款方式</h1>
+                    </div>
+
+                    {/* Payment Method Selection */}
+                    <Tabs value={selectedPaymentMethod} onValueChange={setSelectedPaymentMethod} className="w-full">
+                      <TabsList className="grid w-full grid-cols-4 h-auto p-1 bg-gray-100/50 rounded-xl">
+                        <TabsTrigger value="payme" className="flex flex-col gap-1 py-3 text-xs data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-[#E53535]">
+                          <Lucide.Smartphone className="w-5 h-5" />
+                          PayMe
+                        </TabsTrigger>
+                        <TabsTrigger value="fps" className="flex flex-col gap-1 py-3 text-xs data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-[#00ab4e]">
+                          <Lucide.Banknote className="w-5 h-5" />
+                          轉數快
+                        </TabsTrigger>
+                        <TabsTrigger value="wallets" className="flex flex-col gap-1 py-3 text-xs data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-[#00C250]">
+                          <Lucide.QrCode className="w-5 h-5" />
+                          電子錢包
+                        </TabsTrigger>
+                        <TabsTrigger value="card" className="flex flex-col gap-1 py-3 text-xs data-[state=active]:bg-white data-[state=active]:shadow-sm">
+                          <Lucide.CreditCard className="w-5 h-5" />
+                          信用卡
+                        </TabsTrigger>
+                      </TabsList>
+
+                      <div className="mt-6 min-h-[180px]">
+                        <TabsContent value="payme" className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                          <div className="bg-red-50/50 border border-red-100 rounded-xl p-4 text-center space-y-3">
+                            <p className="text-sm text-gray-600">點擊下方按鈕打開 PayMe 應用程式付款。</p>
+                            <Link href={payMeLink} target="_blank" rel="noopener noreferrer" className="block w-full">
+                                <button className="w-full bg-[#E53535] hover:bg-[#D62E2E] text-white font-bold py-3 px-4 rounded-xl shadow-md transition-transform active:scale-95 flex items-center justify-center gap-2">
+                                <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm.31-8.86c-1.77-.45-2.34-.94-2.34-1.67 0-.84.79-1.43 2.1-1.43 1.38 0 1.9.66 1.94 1.64h1.71c-.05-1.34-.87-2.57-2.49-2.97V5H10.9v1.69c-1.51.32-2.72 1.3-2.72 2.81 0 1.79 1.49 2.69 3.66 3.21 1.95.46 2.34 1.15 2.34 1.87 0 .53-.39 1.39-2.1 1.39-1.6 0-2.23-.72-2.32-1.64H8.04c.1 1.7 1.36 2.66 2.86 2.97V19h2.34v-1.67c1.52-.29 2.72-1.16 2.73-2.77-.01-2.2-1.9-2.96-3.66-3.42z" /></svg>
+                                PayMe HK{displayAmount.toFixed(0)}
+                              </button>
+                            </Link>
+                          </div>
+                        </TabsContent>
+
+                        <TabsContent value="fps" className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                          <Card className="bg-emerald-50/50 border-emerald-100 border-dashed">
+                            <CardContent className="p-4 space-y-3 text-sm text-gray-600">
+                              <div className="flex justify-between items-center border-b border-emerald-100 pb-2">
+                                <span>快速支付系統 ID</span>
+                                <span className="font-mono font-bold text-black text-base selection:bg-emerald-200">1234567</span>
+                              </div>
+                              <div className="flex justify-between items-center border-b border-emerald-100 pb-2">
+                                <span>電話號碼</span>
+                                <span className="font-mono font-bold text-black text-base selection:bg-emerald-200">+852 9123 4567</span>
+                              </div>
+                              <div className="flex justify-between items-center border-b border-emerald-100 pb-2">
+                                <span>轉帳金額</span>
+                                <span className="font-bold text-[#A87C73] text-lg">HKD {displayAmount.toFixed(0)}</span>
+                              </div>
+                              <div className="flex justify-between items-center">
+                                <span>帳戶名稱</span>
+                                <span className="font-bold text-black">M-Fashion Limited</span>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </TabsContent>
+
+                        {/* WeChat / Alipay Option */}
+                        <TabsContent value="wallets" className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                          <div className="space-y-3">
+                            {/* WeChat Pay */}
+                            <Link href="weixin://" target="_blank" className="block w-full">
+                              <button className="w-full bg-[#00C250] hover:bg-[#00AC47] text-white font-bold py-3 px-4 rounded-xl shadow-md transition-transform active:scale-95 flex items-center justify-center gap-2">
+                                <span className="font-bold border border-white/40 rounded px-1">微</span>
+                                WeChat Pay
+                              </button>
+                            </Link>
+
+                            {/* AlipayHK */}
+                            <Link href="alipayhk://" target="_blank" className="block w-full">
+                              <button className="w-full bg-[#00A3EE] hover:bg-[#008AC9] text-white font-bold py-3 px-4 rounded-xl shadow-md transition-transform active:scale-95 flex items-center justify-center gap-2">
+                                <span className="font-bold border border-white/40 rounded px-1">支</span>
+                                AlipayHK
+                              </button>
+                            </Link>
+                          </div>
+                                <p className="text-xs text-center text-muted-foreground">
+                            點擊按鈕開啟 App 支付 <span className="font-bold text-[#A87C73]">HKD {displayAmount.toFixed(0)}</span>
+                          </p>
+                        </TabsContent>
+
+                        {/* Credit Card Option */}
+                        <TabsContent value="card" className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                          <div className="p-6 bg-gray-50 rounded-xl border border-gray-100 text-center space-y-4">
+                             <Lucide.CreditCard className="w-12 h-12 mx-auto text-gray-300" />
+                            <div className="space-y-2">
+                              <h3 className="font-medium text-gray-900">信用卡支付</h3>
+                              <p className="text-sm text-gray-500">我們接受 Visa 和 MasterCard。</p>
+                            </div>
+                              <button className="w-full bg-black text-white py-3 rounded-xl font-bold text-sm hover:bg-gray-800 transition-colors opacity-50 cursor-not-allowed">
+                              支付 HKD {displayAmount.toFixed(0)} (即將推出)
+                            </button>
+                          </div>
+                        </TabsContent>
+                      </div>
+                    </Tabs>
+
+                    <div className="mt-4 space-y-3">
+                      <button
+                        onClick={() => goToStep(3)}
+                        className={`w-full bg-[#A87C73] hover:bg-[#986B62] text-white font-bold py-3 px-4 rounded-xl shadow-md transition-transform active:scale-95 ${isPaymentSubmitted ? 'opacity-60 cursor-not-allowed hover:bg-[#A87C73]' : ''}`}
+                        disabled={isPaymentSubmitted}
+                      >
+                        {isPaymentSubmitted ? '付款已提交' : '下一步：我已付款，上傳入數證明'}
+                      </button>
+
+                      <button
+                        onClick={() => goToStep(1)}
+                        className="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-3 px-4 rounded-xl shadow-md transition-transform active:scale-95"
+                      >
+                        返回上一步
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {/* Step 3: Upload Payment Proof */}
+                {currentStep === 3 && (
+                  <>
+                    <div className="text-center">
+                      <h1 className="text-2xl font-bold text-[#A87C73]">上傳付款證明</h1>
+                      <p className="mt-2 text-sm text-gray-500">請上傳您的付款截圖或收據</p>
+                    </div>
+
+                    <PaymentUploadForm orderId={order.id} paymentMethod={selectedPaymentMethod} onSuccess={() => goToStep(4)} />
+
+                    <button
+                        onClick={() => goToStep(2)}
+                      className="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-3 px-4 rounded-xl shadow-md transition-transform active:scale-95"
                     >
-                      <button className="w-full bg-[#E53535] hover:bg-[#D62E2E] text-white font-bold py-3 px-4 rounded-xl shadow-md transition-transform active:scale-95 flex items-center justify-center gap-2">
-                         <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm.31-8.86c-1.77-.45-2.34-.94-2.34-1.67 0-.84.79-1.43 2.1-1.43 1.38 0 1.9.66 1.94 1.64h1.71c-.05-1.34-.87-2.57-2.49-2.97V5H10.9v1.69c-1.51.32-2.72 1.3-2.72 2.81 0 1.79 1.49 2.69 3.66 3.21 1.95.46 2.34 1.15 2.34 1.87 0 .53-.39 1.39-2.1 1.39-1.6 0-2.23-.72-2.32-1.64H8.04c.1 1.7 1.36 2.66 2.86 2.97V19h2.34v-1.67c1.52-.29 2.72-1.16 2.73-2.77-.01-2.2-1.9-2.96-3.66-3.42z" />
-                         </svg>
-                         PayMe HK${(order.price || 0).toFixed(2)}
+                      返回上一步
+                    </button>
+                  </>
+                )}
+
+                {/* Step 4: Confirmation */}
+                {currentStep === 4 && (
+                  <div className="border border-green-200 bg-green-50 rounded-lg p-8 text-center space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <div className="flex justify-center">
+                      <Lucide.CheckCircle2 className="h-12 w-12 text-green-500" />
+                    </div>
+                    <div className="space-y-2">
+                      <h3 className="text-xl font-semibold text-green-900">已提交付款證明</h3>
+                      <p className="text-green-700">我們已收到您的付款證明，感謝您的購買。</p>
+                      {order.payment_proof_url && (
+                        <div className="mt-4">
+                          <a href={order.payment_proof_url} target="_blank" rel="noreferrer" className="text-xs text-green-600 underline hover:text-green-800">
+                            查看已上傳的證明
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                    <Link href="/flash-sale" className="block">
+                      <button
+                        className="w-full bg-[#A87C73] hover:bg-[#986B62] text-white font-bold py-3 px-4 rounded-xl shadow-md transition-transform active:scale-95 mt-4"
+                      >
+                        返回選購商品
                       </button>
                     </Link>
                   </div>
-                </TabsContent>
-
-                {/* FPS Option */}
-                <TabsContent value="fps" className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <Card className="bg-emerald-50/50 border-emerald-100 border-dashed">
-                      <CardContent className="p-4 space-y-3 text-sm text-gray-600">
-                          <div className="flex justify-between items-center border-b border-emerald-100 pb-2">
-                             <span>快速支付系統 ID</span>
-                             <span className="font-mono font-bold text-black text-base selection:bg-emerald-200">1234567</span>
-                          </div>
-                          <div className="flex justify-between items-center border-b border-emerald-100 pb-2">
-                             <span>電話號碼</span>
-                             <span className="font-mono font-bold text-black text-base selection:bg-emerald-200">+852 9123 4567</span>
-                          </div>
-                          <div className="flex justify-between items-center border-b border-emerald-100 pb-2">
-                             <span>轉帳金額</span>
-                             <span className="font-bold text-[#A87C73] text-lg">HKD ${(order.price || 0).toFixed(2)}</span>
-                          </div>
-                          <div className="flex justify-between items-center">
-                             <span>帳戶名稱</span>
-                             <span className="font-bold text-black">M-Fashion Limited</span>
-                          </div>
-                      </CardContent>
-                  </Card>
-                </TabsContent>
-
-                 {/* WeChat / Alipay Option */}
-                <TabsContent value="wallets" className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                    <div className="space-y-3">
-                         {/* WeChat Pay */}
-                        <Link
-                            href="weixin://" 
-                            target="_blank"
-                            className="block w-full"
-                        >
-                             <button className="w-full bg-[#00C250] hover:bg-[#00AC47] text-white font-bold py-3 px-4 rounded-xl shadow-md transition-transform active:scale-95 flex items-center justify-center gap-2">
-                                <span className="font-bold border border-white/40 rounded px-1">微</span>
-                                WeChat Pay
-                             </button>
-                        </Link>
-
-                         {/* AlipayHK */}
-                         <Link
-                            href="alipayhk://"
-                            target="_blank"
-                            className="block w-full"
-                        >
-                           <button className="w-full bg-[#00A3EE] hover:bg-[#008AC9] text-white font-bold py-3 px-4 rounded-xl shadow-md transition-transform active:scale-95 flex items-center justify-center gap-2">
-                                <span className="font-bold border border-white/40 rounded px-1">支</span>
-                                AlipayHK
-                           </button>
-                        </Link>
-                    </div>
-                    <p className="text-xs text-center text-muted-foreground">
-                        點擊按鈕開啟 App 支付 <span className="font-bold text-[#A87C73]">HKD ${(order.price || 0).toFixed(2)}</span>
-                    </p>
-                </TabsContent>
-                
-                 {/* Credit Card Option */}
-                <TabsContent value="card" className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                   <div className="p-6 bg-gray-50 rounded-xl border border-gray-100 text-center space-y-4">
-                       <CreditCard className="w-12 h-12 mx-auto text-gray-300" />
-                       <div className="space-y-2">
-                         <h3 className="font-medium text-gray-900">信用卡支付</h3>
-                         <p className="text-sm text-gray-500">
-                             我們接受 Visa 和 MasterCard。
-                         </p>
-                       </div>
-                       <button className="w-full bg-black text-white py-3 rounded-xl font-bold text-sm hover:bg-gray-800 transition-colors opacity-50 cursor-not-allowed">
-                           支付 HKD ${(order.price || 0).toFixed(2)} (即將推出)
-                       </button>
-                   </div>
-                </TabsContent>
-              </div>
-            </Tabs>
-
-            <div className="relative pt-4">
-              <div className="absolute inset-0 flex items-center pt-4">
-                <span className="w-full border-t border-gray-200" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase pt-4">
-                <span className="bg-white px-2 text-muted-foreground text-gray-400">
-                  付款證明
-                </span>
-              </div>
-            </div>
-             </>
+                )}
+              </>
             )}
-
-            {/* Check status or existing proof */}
-            {isPaymentSubmitted ? (
-                <div className="border border-green-200 bg-green-50 rounded-lg p-8 text-center space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                    <div className="flex justify-center">
-                        <CheckCircle2 className="h-12 w-12 text-green-500" />
-                    </div>
-                    <div className="space-y-2">
-                        <h3 className="text-xl font-semibold text-green-900">已提交付款證明</h3>
-                        <p className="text-green-700">我們已收到您的付款證明，感謝您的購買。</p>
-                        {order.payment_proof_url && (
-                             <div className="mt-4">
-                                <a href={order.payment_proof_url} target="_blank" rel="noreferrer" className="text-xs text-green-600 underline hover:text-green-800">
-                                    查看已上傳的證明
-                                </a>
-                             </div>
-                        )}
-                    </div>
-                </div>
-            ) : (
-                <PaymentUploadForm orderId={order.id} />
-            )}
+          </div>
+          <div className="px-6 pb-6">
+            <p className="text-[11px] text-gray-400 font-mono text-center">交易編號: {liveOrder.transaction_id || liveOrder.order_number || (liveOrder.id ? liveOrder.id.slice(0, 8) : '')}</p>
           </div>
         </div>
       </div>
-    </div>
+    </ErrorBoundary>
   );
 }

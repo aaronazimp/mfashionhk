@@ -3,12 +3,13 @@
 import React, { useState, useCallback } from 'react'
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
-import { Upload, X, Loader2, CheckCircle2, CloudUpload } from "lucide-react"
+import * as Lucide from "lucide-react"
+import { Spinner } from '@/components/ui/spinner'
 import { supabase } from "@/lib/supabase"
 import { submitPaymentProof } from "@/app/actions"
 import Image from "next/image"
 
-export function PaymentUploadForm({ orderId }: { orderId: string }) {
+export function PaymentUploadForm({ orderId, onSuccess, paymentMethod }: { orderId: string; onSuccess?: () => void; paymentMethod?: string }) {
   const { toast } = useToast()
   
   const [file, setFile] = useState<File | null>(null)
@@ -89,7 +90,7 @@ export function PaymentUploadForm({ orderId }: { orderId: string }) {
     try {
       const timestamp = Date.now()
       const fileExt = file.name.split('.').pop()
-      const filePath = `proofs/${orderId}_${timestamp}.${fileExt}`
+      const filePath = `${orderId}_${timestamp}.${fileExt}`
 
       // 1. Upload to Supabase Storage
       const { error: uploadError } = await supabase.storage
@@ -105,11 +106,17 @@ export function PaymentUploadForm({ orderId }: { orderId: string }) {
         .from('payment-proofs')
         .getPublicUrl(filePath)
 
-      // 3. Call Server Action
-      const result = await submitPaymentProof(orderId, publicUrl)
+      // 3. Call Server Action (include payment method if provided)
+      const result = await submitPaymentProof(orderId, publicUrl, paymentMethod)
 
       if (result.error) {
-        throw new Error(result.error)
+        toast({
+          variant: "destructive",
+          title: "錯誤",
+          description: result.error || "提交付款證明失敗。",
+        })
+        setIsUploading(false)
+        return
       }
 
       setIsSuccess(true)
@@ -118,6 +125,11 @@ export function PaymentUploadForm({ orderId }: { orderId: string }) {
         description: "您的付款證明已成功上傳。",
         className: "bg-green-50 border-green-200 text-green-800",
       })
+
+      // Call the onSuccess callback if provided
+      if (onSuccess) {
+        onSuccess()
+      }
 
     } catch (error: any) {
       console.error('Submission error:', error)
@@ -135,7 +147,7 @@ export function PaymentUploadForm({ orderId }: { orderId: string }) {
     return (
       <div className="border border-green-200 bg-green-50 rounded-lg p-8 text-center space-y-4">
         <div className="flex justify-center">
-          <CheckCircle2 className="h-12 w-12 text-green-500" />
+          <Lucide.CheckCircle2 className="h-12 w-12 text-green-500" />
         </div>
         <div className="space-y-2">
           <h3 className="text-xl font-semibold text-green-900">付款證明已提交！</h3>
@@ -169,8 +181,8 @@ export function PaymentUploadForm({ orderId }: { orderId: string }) {
             onChange={handleFileSelect}
           />
           <div className="flex flex-col items-center gap-3">
-            <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
-              <CloudUpload className="h-6 w-6 text-muted-foreground" />
+              <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
+              <Lucide.CloudUpload className="h-6 w-6 text-muted-foreground" />
             </div>
             <div className="space-y-1">
               <p className="font-medium">點擊或拖曳上傳</p>
@@ -182,7 +194,7 @@ export function PaymentUploadForm({ orderId }: { orderId: string }) {
         /* Image Preview State */
         <div className="relative border rounded-xl overflow-hidden bg-muted/30">
           <div className="absolute top-2 right-2 z-10">
-            <Button
+              <Button
               variant="destructive"
               size="icon"
               className="h-8 w-8 rounded-full shadow-sm"
@@ -191,8 +203,8 @@ export function PaymentUploadForm({ orderId }: { orderId: string }) {
                 clearFile()
               }}
               disabled={isUploading}
-            >
-              <X className="h-4 w-4" />
+              >
+              <Lucide.X className="h-4 w-4" />
             </Button>
           </div>
           <div className="flex flex-col items-center p-4 gap-4">
@@ -220,7 +232,7 @@ export function PaymentUploadForm({ orderId }: { orderId: string }) {
       >
         {isUploading ? (
           <>
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            <Spinner className="mr-2 h-4 w-4" />
             上傳中...
           </>
         ) : (

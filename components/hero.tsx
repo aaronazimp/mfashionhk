@@ -1,7 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Zap } from "lucide-react";
+import * as Lucide from "lucide-react";
 
 export function Hero() {
   return (
@@ -34,16 +34,16 @@ export function Hero() {
                 className="w-full sm:w-auto px-10 py-7 bg-gradient-to-r from-[#A87C73] to-[#d49e92] text-white text-xl font-bold rounded-full shadow-[0_0_20px_rgba(168,124,115,0.5)] cursor-default"
             >
               <div className="flex items-center gap-2">
-                <Zap className="w-5 h-5 fill-yellow-300 text-yellow-100" />
+                <Lucide.Zap className="w-5 h-5 fill-yellow-300 text-yellow-100" />
                 限時搶購(即將推出)
-                <Zap className="w-5 h-5 fill-yellow-300 text-yellow-100" />
+                <Lucide.Zap className="w-5 h-5 fill-yellow-300 text-yellow-100" />
               </div>
             </Button>
 
             <Button asChild variant="link" size="lg" className="text-muted-foreground hover:text-primary transition-colors text-base font-normal">
               <Link href="/#products" className="flex items-center gap-1">
                 瀏覽所有 Live 精選商品
-                <ArrowRight className="w-4 h-4 ml-1" />
+                <Lucide.ArrowRight className="w-4 h-4 ml-1" />
               </Link>
             </Button>
           </div>

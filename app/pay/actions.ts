@@ -14,13 +14,9 @@ export async function uploadInvoiceAndSave(formData: FormData) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-  // If Service Key is missing in Dev/Preview, return a mock success to allow flow to continue
-  if (!supabaseServiceKey && process.env.NODE_ENV !== 'production') {
-     console.warn("Missing SUPABASE_SERVICE_ROLE_KEY. Returning mock receipt URL for development.");
-     return { 
-         publicUrl: "https://placehold.co/600x800/png?text=Mock+Invoice",
-         warning: "Dev Mode: Mock Invoice Used"
-     }
+  if (!supabaseServiceKey) {
+    console.error("Missing SUPABASE_SERVICE_ROLE_KEY. Server-side upload cannot proceed.");
+    return { error: 'Server configuration error: Missing Service Key' }
   }
 
   if (!supabaseUrl || !supabaseServiceKey) {

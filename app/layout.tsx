@@ -5,6 +5,7 @@ import { Analytics } from '@vercel/analytics/next'
 import { Toaster } from "@/components/ui/toaster"
 import { GlobalCart } from "@/components/global-cart"
 import './globals.css'
+import NoConsole from "@/components/NoConsole"
 
 const merriweather = Merriweather({ 
   weight: ['300', '400', '700', '900'],
@@ -40,6 +41,7 @@ export default function RootLayout({
   return (
     <html lang="zh-TW">
       <body className={`${merriweather.variable} font-sans antialiased`}>
+        <NoConsole />
         {children}
         
         <Analytics />

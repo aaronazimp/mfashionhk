@@ -7,19 +7,7 @@ import type { Product } from "@/lib/products";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import { 
-  Calendar as CalendarIcon,
-  Shirt, 
-  ShoppingBag, 
-  Layers, 
-  Gem,
-  Package,
-  Footprints,
-  MoreHorizontal,
-  X,
-  Filter,
-  Flower
-} from "lucide-react";
+import * as Lucide from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -37,15 +25,7 @@ import {
   DrawerTitle,
   DrawerTrigger,
 } from "@/components/ui/drawer";
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-  PaginationEllipsis,
-} from "@/components/ui/pagination";
+import PaginationControls from "@/components/ui/pagination-controls";
 
 // Helper to parse date from SKU
 const getDateFromSku = (sku: string): Date | null => {
@@ -57,13 +37,13 @@ const getDateFromSku = (sku: string): Date | null => {
 };
 
 const CATEGORY_GROUPS = [
-  { label: "上身", icon: Shirt, keywords: ["上身"] },
-  { label: "下身", icon: Flower, keywords: ["下身"] },
-  { label: "套裝", icon: Package, keywords: ["套裝"] },
-  { label: "鞋", icon: Footprints, keywords: ["鞋"] },
-  { label: "飾物", icon: Gem, keywords: ["飾物"] },
-  { label: "手袋", icon: ShoppingBag, keywords: ["手袋"] },
-  { label: "其他", icon: MoreHorizontal, keywords: ["其他"] },
+  { label: "上身", icon: Lucide.Shirt, keywords: ["上身"] },
+  { label: "下身", icon: Lucide.Flower, keywords: ["下身"] },
+  { label: "套裝", icon: Lucide.Package, keywords: ["套裝"] },
+  { label: "鞋", icon: Lucide.Footprints, keywords: ["鞋"] },
+  { label: "飾物", icon: Lucide.Gem, keywords: ["飾物"] },
+  { label: "手袋", icon: Lucide.ShoppingBag, keywords: ["手袋"] },
+  { label: "其他", icon: Lucide.MoreHorizontal, keywords: ["其他"] },
 ];
 
 const DATE_FILTERS = [
@@ -401,7 +381,7 @@ export function ProductGrid() {
              <div className="flex gap-2 items-center">
                 <Select value={dateFilter} onValueChange={setDateFilter}>
                     <SelectTrigger className="w-[180px] bg-background border-input">
-                        <CalendarIcon className="w-4 h-4 mr-2 text-muted-foreground" />
+                        <Lucide.Calendar className="w-4 h-4 mr-2 text-muted-foreground" />
                         <SelectValue placeholder="選擇日期" />
                     </SelectTrigger>
                     <SelectContent>
@@ -415,7 +395,7 @@ export function ProductGrid() {
 
                  {(selectedCategories.length > 0 || dateFilter !== 'all') && (
                     <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground hover:text-foreground">
-                        <X className="w-4 h-4 mr-1" /> 清除<span className="hidden sm:inline">篩選</span>
+                        <Lucide.X className="w-4 h-4 mr-1" /> 清除<span className="hidden sm:inline">篩選</span>
                     </Button>
                 )}
              </div>
@@ -461,7 +441,7 @@ export function ProductGrid() {
                             onClick={() => removeCategory(cat)}
                             className="bg-transparent hover:bg-[#C4A59D]/20 rounded-full p-0.5 transition-colors"
                         >
-                            <X className="w-3.5 h-3.5" />
+                            <Lucide.X className="w-3.5 h-3.5" />
                             <span className="sr-only">移除 {cat}</span>
                         </button>
                     </div>
@@ -469,13 +449,13 @@ export function ProductGrid() {
 
                 {dateFilter !== 'all' && (
                     <div className="inline-flex items-center gap-1.5 pl-3 pr-2 py-1.5 rounded-full text-sm font-medium bg-zinc-100 text-zinc-700 border border-zinc-200 shadow-sm">
-                        <CalendarIcon className="w-3.5 h-3.5 opacity-50" />
+                        <Lucide.Calendar className="w-3.5 h-3.5 opacity-50" />
                         {DATE_FILTERS.find(f => f.value === dateFilter)?.label}
                         <button 
                             onClick={() => setDateFilter("all")}
                             className="bg-transparent hover:bg-zinc-200 rounded-full p-0.5 transition-colors"
                         >
-                            <X className="w-3.5 h-3.5" />
+                            <Lucide.X className="w-3.5 h-3.5" />
                             <span className="sr-only">移除日期篩選</span>
                         </button>
                     </div>
@@ -498,7 +478,7 @@ export function ProductGrid() {
                 <DrawerTrigger asChild>
                     <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-40 shadow-2xl rounded-full animate-in fade-in slide-in-from-bottom-4 duration-500">
                         <Button size="lg" className="rounded-full bg-[#111827] text-white hover:bg-[#111827]/90 px-8 h-12 shadow-xl border border-white/10 gap-2">
-                            <Filter className="w-4 h-4" />
+                            <Lucide.Filter className="w-4 h-4" />
                             <span className="font-medium">篩選</span>
                             {activeFilterCount > 0 && (
                                 <span className="flex items-center justify-center bg-[#C4A59D] text-white text-[10px] font-bold h-5 min-w-[20px] px-1.5 rounded-full ml-0.5">
@@ -537,14 +517,14 @@ export function ProductGrid() {
              </div>
           ) : products.length === 0 ? (
              <div className="col-span-full py-20 text-center">
-                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-muted mb-4">
-                    <ShoppingBag className="w-8 h-8 text-muted-foreground" />
+                    <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-muted mb-4">
+                    <Lucide.ShoppingBag className="w-8 h-8 text-muted-foreground" />
                 </div>
                 <h3 className="text-lg font-medium text-foreground mb-1">沒有找到商品</h3>
                 <p className="text-muted-foreground">試試調整篩選條件</p>
                 <div className="mt-4">
                    <Button variant="outline" onClick={clearFilters} className="gap-2">
-                        <X className="w-4 h-4" />
+                        <Lucide.X className="w-4 h-4" />
                         清除所有篩選
                     </Button>
                 </div>
@@ -557,75 +537,12 @@ export function ProductGrid() {
         </div>
 
         {/* Pagination Controls */}
-        {!isLoading && totalPages > 1 && (
-          <div className="mt-12">
-            <Pagination>
-              <PaginationContent>
-                <PaginationItem>
-                  <PaginationPrevious 
-                    href="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      if (currentPage > 1) setCurrentPage(p => p - 1);
-                    }}
-                    className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
-                  />
-                </PaginationItem>
-                
-                {/* Logic to show pages with ellipsis if too many */}
-                {Array.from({ length: totalPages }).map((_, i) => {
-                  const pageNumber = i + 1;
-                  // Show first, last, current, and surrounding pages
-                  if (
-                    pageNumber === 1 ||
-                    pageNumber === totalPages ||
-                    (pageNumber >= currentPage - 1 && pageNumber <= currentPage + 1)
-                  ) {
-                    return (
-                      <PaginationItem key={pageNumber}>
-                        <PaginationLink
-                          href="#"
-                          isActive={pageNumber === currentPage}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            setCurrentPage(pageNumber);
-                          }}
-                        >
-                          {pageNumber}
-                        </PaginationLink>
-                      </PaginationItem>
-                    );
-                  }
-                  
-                  // Show ellipsis
-                  if (
-                    pageNumber === currentPage - 2 || 
-                    pageNumber === currentPage + 2
-                  ) {
-                     return (
-                        <PaginationItem key={pageNumber}>
-                            <PaginationEllipsis />
-                        </PaginationItem>
-                     );
-                  }
-
-                  return null;
-                })}
-
-                <PaginationItem>
-                  <PaginationNext
-                    href="#" 
-                    onClick={(e) => {
-                      e.preventDefault();
-                      if (currentPage < totalPages) setCurrentPage(p => p + 1);
-                    }}
-                    className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
-                  />
-                </PaginationItem>
-              </PaginationContent>
-            </Pagination>
-          </div>
-        )}
+        <PaginationControls
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={(p) => setCurrentPage(p)}
+          className="mt-12"
+        />
       </div>
     </section>
   );

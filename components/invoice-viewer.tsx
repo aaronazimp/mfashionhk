@@ -3,7 +3,8 @@
 import { useState } from "react"
 import Image from "next/image"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
-import { Maximize2, Download, Loader2 } from "lucide-react"
+import * as Lucide from "lucide-react"
+import { Spinner } from '@/components/ui/spinner'
 import { Button } from "@/components/ui/button"
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden"
 
@@ -46,8 +47,8 @@ export function InvoiceViewer({ url, alt, initiallyOpen = false, onClose, downlo
         />
         <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
             <Button size="icon" variant="secondary" className="h-8 w-8 rounded-full shadow-md bg-white/80 hover:bg-white backdrop-blur-sm">
-                <Maximize2 className="h-4 w-4 text-gray-700" />
-            </Button>
+            <Lucide.Maximize2 className="h-4 w-4 text-gray-700" />
+          </Button>
         </div>
         
          <div className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
@@ -62,10 +63,10 @@ export function InvoiceViewer({ url, alt, initiallyOpen = false, onClose, downlo
              <DialogTitle className="sr-only">{alt}</DialogTitle>
              
              {isLoading && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-white z-20 gap-4">
-                    <Loader2 className="h-10 w-10 animate-spin text-[#A87C73]" />
-                    <p className="text-sm font-medium text-gray-400 tracking-wide">載入中...</p>
-                </div>
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-white z-20 gap-4">
+                <Spinner className="h-10 w-10 text-[#A87C73]" />
+                <p className="text-sm font-medium text-gray-400 tracking-wide">載入中...</p>
+              </div>
              )}
 
              {url && (
@@ -89,7 +90,7 @@ export function InvoiceViewer({ url, alt, initiallyOpen = false, onClose, downlo
                 className="px-6 py-3 bg-white hover:bg-gray-100 text-gray-900 font-bold rounded-full shadow-lg transition-transform hover:scale-105 flex items-center gap-2"
                 title="Download Invoice"
               >
-                  <Download className="w-4 h-4" />
+                  <Lucide.Download className="w-4 h-4" />
                   <span className="text-sm">下載發票</span>
               </a>
             )}

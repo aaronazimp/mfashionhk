@@ -1,7 +1,7 @@
 'use server'
 
 import { redirect } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { createReelsOrderWithQuota } from '@/lib/orderService'
 
 export async function registerReelsOrder(formData: FormData) {
   const name = formData.get('name') as string
@@ -19,25 +19,20 @@ export async function registerReelsOrder(formData: FormData) {
     return { error: 'Missing required fields' }
   }
 
-  // Use the admin client if RLS policies restrict creation, 
-  // but here we likely rely on the RPC function to handle logic. 
-  // IMPORTANT: Ensure the RPC is accessible to the role used by this client (anon or service_role).
-  
-  const { data, error } = await supabase.rpc('create_reels_order_with_quota', {
-    p_customer_name: name,
-    p_whatsapp: whatsapp,
-    p_email: email,
-    p_sku_id: skuId,
-    p_variation_id: variationId
-  })
+  try {
+    const data = await createReelsOrderWithQuota(
+      name,
+      whatsapp,
+      email,
+      skuId,
+      variationId
+    )
 
-  if (error) {
-    console.error('Error creating order:', error)
-    return { error: error.message || 'Error occurred while creating order' }
-  }
+    // The service throws on RPC error; continue below to handle result
+    if (!data) {
+      return { error: 'No data returned from server' }
+    }
 
-  // The RPC returns { "order_id": "...", "status": "confirmed" | "waitlist" }
-  if (data) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const orderData = data as any
     const { order_id, status } = orderData
@@ -47,12 +42,10 @@ export async function registerReelsOrder(formData: FormData) {
     } else if (status === 'waitlist') {
       redirect(`/reels/status/${order_id}`)
     } else {
-       // Should not happen if status is well typed in DB, but good fallback
-       // Maybe just success without redirect? The prompt says Case A and Case B.
-       // We can return the status to client if needed, but let's assume we handle it here or error.
-       return { error: `Received unknown order status: ${status}` }
+      return { error: `Received unknown order status: ${status}` }
     }
-  } else {
-      return { error: 'No data returned from server' }
+  } catch (err) {
+    console.error('Error creating order:', err)
+    return { error: (err as Error).message || 'Error occurred while creating order' }
   }
 }

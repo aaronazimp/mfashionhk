@@ -1,39 +1,57 @@
 import { createClient } from "@supabase/supabase-js";
 import { notFound } from "next/navigation";
 import { Metadata, ResolvingMetadata } from "next";
-import PaymentClient, { Order } from "./payment-client";
+import PaymentClient from "./payment-client";
+import type { PaymentPageOrder } from "../../../lib/products";
 
 // Ensure we have the environment variables
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 
-// Initialize Supabase lazily or safely
-const supabase = createClient(supabaseUrl, supabaseKey);
+// NOTE: don't initialize the client at module import time — create it lazily inside the
+// server function so missing env or network errors can be handled gracefully.
 
 type Props = {
-  params: Promise<{ id: string }>;
-  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+  params: { id: string };
+  searchParams?: { [key: string]: string | string[] | undefined };
 };
 
-async function getOrder(id: string): Promise<Order | null> {
-  if (!supabaseUrl || !supabaseKey) {
+async function getOrder(id: string): Promise<PaymentPageOrder | null> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+
+  if (!url || !key) {
     console.warn("Supabase environment variables missing; cannot fetch orders in this environment.");
     return null;
   }
 
+  const supabase = createClient(url, key);
+
   // Call the server-side RPC which centralises payment-summary logic
-  const { data, error } = await supabase.rpc("get_order_payment_summary", { p_order_number: id });
-  if (error) {
-    console.warn("RPC get_order_payment_summary error:", error);
+  let rpcData: any = null;
+  try {
+    const { data, error } = await supabase.rpc("get_payment_page_data", { p_transaction_id: id });
+    console.log("Supabase RPC get_payment_page_data return:", data);
+    if (error) {
+      console.warn("RPC get_payment_page_data error:", error);
+      // In development, do not abort immediately — allow a dev fallback later so the page can render
+      if (process.env.NODE_ENV === 'production') {
+        return null;
+      }
+    }
+    rpcData = data;
+  } catch (err) {
+    // Network / DNS errors surface here (fetch failed / ENOTFOUND)
+    console.error("Network or fetch error when calling Supabase RPC:", err);
     return null;
   }
 
   // Normalize RPC result: Supabase may return an array wrapper or object
-  let payload: any = data;
+  let payload: any = rpcData;
   if (Array.isArray(payload)) {
     // Some RPC shapes return [{ get_order_payment_summary: { ... } }] or [ { ... } ]
     payload = payload[0] ?? null;
-    if (payload && payload.get_order_payment_summary) payload = payload.get_order_payment_summary;
+    if (payload && payload.get_payment_page_data) payload = payload.get_payment_page_data;
   }
 
   // If payload is a string, try parse JSON
@@ -46,35 +64,131 @@ async function getOrder(id: string): Promise<Order | null> {
     }
   }
 
+  // If RPC returned a known error payload, treat as missing order
+  // e.g. { error: "Transaction not found" }
+  const rpcError =
+    (payload && (payload.error || payload.message)) ||
+    (payload && payload.get_payment_page_data && (payload.get_payment_page_data.error || payload.get_payment_page_data.message));
+  if (typeof rpcError === 'string' && rpcError.includes('Transaction not found')) {
+    console.warn('get_payment_page_data RPC returned Transaction not found for', id);
+    return null;
+  }
+
   if (!payload) {
-    console.warn('Empty payload from get_order_payment_summary');
+    console.warn('Empty payload from get_payment_page_data');
+    // Dev fallback: return a lightweight mock order to keep the page visible while DB RPC or grants are being fixed
+    if (process.env.NODE_ENV !== 'production') {
+      return {
+        id: id,
+        transaction_id: id,
+        order_number: id,
+        created_at: new Date().toISOString(),
+        subtotal: 0,
+        shipping_fee: 0,
+        total_to_pay: 0,
+        price: 0,
+        status: 'pending',
+        receipt_url: undefined,
+        base64_image: undefined,
+        whatsapp: undefined,
+        payment_proof_url: undefined,
+        payment_deadline: undefined,
+        items_waitlist: [],
+        items: [],
+      } as PaymentPageOrder;
+    }
+
     return null;
   }
 
   // Map RPC result into the `Order` shape expected by the client component.
   // Use the subtotal as the main `price`. Use the first "pay now" item for item-level fields where appropriate.
-  const itemsPayNow = Array.isArray(payload.items_pay_now) ? payload.items_pay_now : [];
+  const payNowGroups = payload.pay_now_groups || {};
+  const itemsPayNow = Object.values(payNowGroups).flat() as any[];
   const first = itemsPayNow[0] ?? null;
+  
+  // Build items array from RPC rows so the client can render every line item
+  const items = itemsPayNow.map((it: any) => ({
+    id: it.id ?? `TXN-${payload.transaction_id}-${it.sku_code}`,
+    sku: it.sku_code || "",
+    price: Number(it.price ?? it.row_total ?? 0),
+    quantity: Number(it.quantity ?? 1),
+    variation: it.variation_snapshot || "",
+    row_total: Number(it.row_total ?? (it.price ?? 0) * (it.quantity ?? 1)),
+    sku_img_url: it.image_url ?? undefined,
+    status: 'pay_now',
+  }));
 
-  const mapped: Order = {
-    id: payload.order_number || id,
-    order_number: payload.order_number || id,
+  // If no image URLs were provided by the RPC, attempt to resolve images from SKU master tables
+  try {
+    const skus = Array.from(new Set(items.map((i: any) => i.sku).filter(Boolean)));
+    if (skus.length > 0) {
+      // Query SKU_details with nested SKU_images to find candidate image URLs
+      const { data: skuDetails, error: skuErr } = await supabase
+        .from('SKU_details')
+        .select('id,SKU,imageurl,SKU_images(imageurl, imageIndex)')
+        .in('SKU', skus as string[]);
+
+      if (!skuErr && Array.isArray(skuDetails)) {
+        const imageBySku: Record<string, string> = {};
+        skuDetails.forEach((row: any) => {
+          const skuCode = row.SKU || row.sku || '';
+          if (!skuCode) return;
+          // Prefer explicit imageurl on SKU_details, else first SKU_images with lowest index
+          if (row.imageurl) {
+            imageBySku[skuCode] = row.imageurl;
+            return;
+          }
+          if (Array.isArray(row.SKU_images) && row.SKU_images.length > 0) {
+            const best = row.SKU_images.reduce((acc: any, cur: any) => {
+              if (!acc) return cur;
+              const ai = typeof acc.imageIndex === 'number' ? acc.imageIndex : 0;
+              const ci = typeof cur.imageIndex === 'number' ? cur.imageIndex : 0;
+              return ci < ai ? cur : acc;
+            }, null);
+            if (best && best.imageurl) imageBySku[skuCode] = best.imageurl;
+          }
+        });
+
+        // Attach found images to items
+        items.forEach((it: any) => {
+          if (!it.sku_img_url && imageBySku[it.sku]) it.sku_img_url = imageBySku[it.sku];
+        });
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to resolve SKU images for order items', e);
+  }
+
+  const mapped: PaymentPageOrder = {
+    id: payload.transaction_id || id,
+    transaction_id: payload.transaction_id || id,
+    order_number: payload.transaction_id || id,
     created_at: new Date().toISOString(),
-    sku: first?.sku_code_snapshot || payload.order_number || "",
-    sku_id: undefined,
-    price: Number(payload.subtotal ?? payload.total_to_pay ?? 0),
-    product_name: first?.sku_code_snapshot || "Order Items",
+    sku: first?.sku_code || payload.transaction_id || "",
+    // Prefer the RPC `total_to_pay` as the main payable amount
+    price: Number(payload.total_to_pay ?? payload.subtotal ?? 0),
+    subtotal: Number(payload.subtotal ?? 0),
+    shipping_fee: Number(payload.shipping_fee ?? 0),
+    total_to_pay: Number(payload.total_to_pay ?? payload.subtotal ?? 0),
+    // Join multiple item SKUs for a concise product name (e.g. "M30, M44")
+    product_name: items.map((i: any) => i.sku).filter(Boolean).join(', ') || first?.sku_code || "Order Items",
     customer_name: undefined,
-    status: 'pending',
+    status: payload.status || 'pending',
     receipt_url: undefined,
-    sku_img_url: undefined,
+    // Prefer image provided by RPC (`image_url`) as top-level image
+    sku_img_url: first?.sku_img_url ?? first?.image_url ?? undefined,
     base64_image: undefined,
-    sku_code_snapshot: first?.sku_code_snapshot,
+    sku_code_snapshot: first?.sku_code,
     variation_snapshot: first?.variation_snapshot,
-    quantity: first?.quantity,
-    whatsapp: undefined,
+    quantity: items.reduce((s: number, it: any) => s + (Number(it.quantity) || 0), 0) || first?.quantity,
+    whatsapp: payload.whatsapp,
     payment_proof_url: undefined,
-    deadline: undefined,
+    payment_deadline: payload.payment_deadline,
+    deadline: payload.payment_deadline,
+    items_waitlist: payload.items_waitlist ?? [],
+    pay_now_groups: payload.pay_now_groups ?? {},
+    items,
   };
 
   return mapped;
@@ -84,8 +198,7 @@ export async function generateMetadata(
   { params }: Props,
   parent: ResolvingMetadata
 ): Promise<Metadata> {
-  const resolvedParams = await params;
-  const id = resolvedParams.id;
+  const { id } = await Promise.resolve(params as any);
   const order = await getOrder(id);
 
   if (!order) {
@@ -118,43 +231,17 @@ export async function generateMetadata(
   };
 }
 
+import DevClientCheck from "@/components/dev-client-check";
+import OrderNotFoundDialog from '@/components/OrderNotFoundDialog'
+
 export default async function PaymentPage({ params }: Props) {
-  const resolvedParams = await params;
-  const id = resolvedParams.id;
+  const { id } = await Promise.resolve(params as any);
   const order = await getOrder(id);
 
   if (!order) {
-    // Fallback or Not Found Page
-    return notFound();
+    return <OrderNotFoundDialog transactionId={id} />;
   }
 
-  // Check Expiry (Only for pending orders)
-  if (order.deadline && order.status === 'pending') {
-      const deadlineDate = new Date(order.deadline);
-      const now = new Date();
-      if (now > deadlineDate) {
-           return (
-              <div className="min-h-screen bg-[#FFF4E5] flex items-center justify-center p-4 font-sans">
-                  <div className="bg-white p-8 rounded-2xl shadow-xl text-center max-w-md w-full space-y-6">
-                        <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <svg className="w-10 h-10 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                        </div>
-                        <div className="space-y-2">
-                             <h1 className="text-2xl font-bold text-gray-900">付款連結已過期</h1>
-                             <h2 className="text-lg font-medium text-gray-500">Payment Deadline Expired</h2>
-                        </div>
-                        <p className="text-gray-500">
-                            此訂單的付款期限已過。如果您需要協助，請聯繫我們的客戶服務。<br/>
-                            This order payment link has expired.
-                        </p>
-                        <div className="pt-6 border-t border-gray-100">
-                            <p className="text-xs text-gray-400 font-mono">Order ID: {order.order_number || order.id.slice(0, 8)}</p>
-                        </div>
-                  </div>
-              </div>
-          );
-      }
-  }
-
+  // Dev-only debug: render server order payload so we can confirm the server returned data
   return <PaymentClient order={order} />;
 }

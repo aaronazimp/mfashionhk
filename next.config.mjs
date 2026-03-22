@@ -22,6 +22,14 @@ const nextConfig = {
   async rewrites() {
     return [];
   },
+  // Some third-party packages ship ESM that Turbopack may not transpile
+  // automatically. Ensure these are transpiled so client chunks don't
+  // contain raw `import` statements that break in the browser.
+  transpilePackages: [
+    'lucide-react',
+    'date-fns',
+    '@supabase/supabase-js'
+  ],
 }
 
 export default nextConfig

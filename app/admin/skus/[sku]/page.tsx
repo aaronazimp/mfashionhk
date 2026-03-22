@@ -1,6 +1,8 @@
 import SkuEditor from '@/components/sku-editor';
-import { getProductBySku, Product } from '@/lib/products';
+import type { SingleSkuDetails } from '@/lib/products';
+import { getSingleSkuDetails } from '@/lib/orderService';
 import Link from 'next/link';
+
 
 type Props = {
   params: { sku: string };
@@ -8,41 +10,52 @@ type Props = {
 
 export default async function Page({ params }: Props) {
   const { sku } = await params as any;
-  const product = getProductBySku(sku);
 
-  if (!product) {
+  let rpcProduct: SingleSkuDetails | undefined = undefined
+  // Attempt to call RPC using numeric SKU param (if numeric)
+  const candidateId = Number(sku)
+  if (!Number.isNaN(candidateId) && candidateId > 0) {
+    try {
+      const rpcRes = await getSingleSkuDetails(candidateId)
+      // Normalize RPC response: handle array-wrapped responses and empty objects
+      let candidate: any = rpcRes
+      if (Array.isArray(rpcRes)) candidate = rpcRes[0]
+      if (candidate && typeof candidate === 'object' && Object.keys(candidate).length > 0 && (candidate.SKU || typeof candidate.id !== 'undefined')) {
+        rpcProduct = candidate as SingleSkuDetails
+      } else {
+        // treat empty object/array as no-data -> rpcProduct remains undefined
+      }
+    } catch (err) {
+      console.error('Failed to load single sku details:', err)
+    }
+  } else {
+    // invalid numeric sku param; skipping RPC
+  }
+  if (!rpcProduct) {
+    const EmptyWidget = (await import('@/components/EmptyWidget')).default
     return (
-      <div className="min-h-screen p-6">
-        <h1 className="text-xl font-semibold">SKU 未找到</h1>
-        <p className="mt-2 text-sm text-gray-600">找不到 SKU: {sku}</p>
+      <div className="min-h-screen flex items-center justify-center p-6">
+        <EmptyWidget message={`找不到 SKU: ${sku}`} className="w-full max-w-lg" />
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-gray-50/50 text-[#111827]">
-       <header className="sticky top-0 z-50 bg-white border-b border-gray-200 px-4 py-3 md:px-6 md:py-4">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <nav className="inline-flex gap-1 md:gap-2 bg-gray-50 p-1 rounded-lg border border-gray-200 w-full md:w-auto">
-            <Link href="/admin/orders" className="flex-1 md:flex-initial px-2 md:px-4 py-2 md:py-2 rounded text-xs md:text-sm text-[#111827] text-center md:text-left hover:bg-white/50 transition-colors">處理訂單</Link>
-            <Link href="/admin/upload" className="flex-1 md:flex-initial px-2 md:px-4 py-2 md:py-2 rounded text-xs md:text-sm text-[#111827] text-center md:text-left hover:bg-white/50 transition-colors">上傳 SKU</Link>
-             <Link href="/admin/skus" className="flex-1 md:flex-initial px-2 md:px-4 py-2 md:py-2 rounded text-xs md:text-sm font-medium bg-[#C4A59D] text-white text-center md:text-left hover:bg-[#C4A59D]/90 transition-colors">管理 SKUs</Link>
-            <Link href="/admin/best-sellers" className="flex-1 md:flex-initial px-2 md:px-4 py-2 md:py-2 rounded text-xs md:text-sm text-[#111827] text-center md:text-left hover:bg-white/50 transition-colors">熱賣 SKU</Link>
-          </nav>
+      <header className="bg-white mt-4 px-4 py-3 md:px-6 md:py-4">
+        <div className="max-w-6xl mx-auto flex items-center">
+          <Link href="/admin/skus" className="inline-flex items-center gap-2 text-sm text-gray-700 hover:text-gray-900">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            返回
+          </Link>
         </div>
       </header>
-    <div className="p-6 max-w-6xl mx-auto">
-      <header className="mb-6 flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold">SKU 檢視與編輯</h1>
-          <p className="text-sm text-gray-600">編輯 SKU: {product.sku}</p>
-        </div>
-        <Link href={`/flash-sale?sku=${product.sku}`} target="_blank" className="text-sm text-blue-600 hover:underline">
-          查看預覽頁面
-        </Link>
-      </header>
+    <div className="max-w-[90vw] mx-auto">
+     
 
-      <SkuEditor initialProduct={product} />
+      <SkuEditor initialProduct={rpcProduct} />
     </div>
     </div>
   );

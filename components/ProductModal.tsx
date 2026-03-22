@@ -12,13 +12,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { ChevronLeft, ChevronRight, PlayCircle, Zap, X } from "lucide-react";
+import * as Lucide from "lucide-react";
+
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
 import useSessionToken from "@/hooks/use-session-token";
 import { ToastAction } from "@/components/ui/toast";
-import NativeVideoPlayer from "./native-video-player";
+// Replaced NativeVideoPlayer with native <video> / iframe rendering
 import { CountdownTimer } from "@/components/countdown-timer";
 
 interface Props {
@@ -157,7 +158,10 @@ export default function ProductModal({ id, open, onClose, initialProduct }: Prop
     }
 
     if (!sessionToken) {
-      toast({ description: '請先登入或重新整理頁面' });
+      console.error('Session token is null. localStorage available?', typeof localStorage !== 'undefined');
+      toast({ 
+        description: '無法建立工作階段，請重新整理頁面或使用無痕模式的瀏覽器' 
+      });
       return;
     }
 
@@ -222,13 +226,13 @@ export default function ProductModal({ id, open, onClose, initialProduct }: Prop
         <div className="flex items-center justify-between p-3 border-b">
           <div className="font-bold">商品詳情</div>
           <button onClick={(e) => { e.stopPropagation(); onClose(); }} onPointerDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} className="p-2" aria-label="close">
-            <X className="w-5 h-5" />
+            <Lucide.X className="w-5 h-5" />
           </button>
         </div>
 
         <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <div className="relative aspect-[9/16] bg-zinc-900">
+                <div className="relative aspect-[9/16] bg-zinc-900">
               {slides[currentSlide] ? (
                 slides[currentSlide].type === 'video' ? (
                   <div className="w-full h-full relative flex items-center justify-center bg-black">
@@ -243,7 +247,13 @@ export default function ProductModal({ id, open, onClose, initialProduct }: Prop
                         allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
                       />
                     ) : (
-                      <NativeVideoPlayer url={slides[currentSlide].url} poster={slides[currentSlide].poster} isActive={true} />
+                      <video
+                        src={slides[currentSlide].url}
+                        poster={slides[currentSlide].poster}
+                        className="w-full h-full object-cover object-center"
+                        playsInline
+                        controls
+                      />
                     )}
                   </div>
                 ) : (
@@ -255,12 +265,12 @@ export default function ProductModal({ id, open, onClose, initialProduct }: Prop
                 <div className="w-full h-full flex items-center justify-center text-zinc-400">No image</div>
               )}
               {slides.length > 1 && (
-                <>
+                  <>
                   <button onClick={(e) => { e.stopPropagation(); setCurrentSlide(s => (s === 0 ? slides.length - 1 : s - 1)) }} onPointerDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/20 rounded-full">
-                    <ChevronLeft className="w-5 h-5 text-white" />
+                    <Lucide.ChevronLeft className="w-5 h-5 text-white" />
                   </button>
                   <button onClick={(e) => { e.stopPropagation(); setCurrentSlide(s => (s + 1) % slides.length) }} onPointerDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/20 rounded-full">
-                    <ChevronRight className="w-5 h-5 text-white" />
+                    <Lucide.ChevronRight className="w-5 h-5 text-white" />
                   </button>
                 </>
               )}
@@ -271,7 +281,7 @@ export default function ProductModal({ id, open, onClose, initialProduct }: Prop
                 <button key={i} onClick={(e) => { e.stopPropagation(); setCurrentSlide(i) }} onPointerDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} className={cn("w-16 h-16 rounded overflow-hidden", currentSlide === i ? "ring-2 ring-[#A87C73]" : "")}>
                   <div className="relative w-full h-full">
                     {s.type === 'video' ? (
-                      <div className="w-full h-full bg-zinc-800 flex items-center justify-center"><PlayCircle className="w-6 h-6 text-white" /></div>
+                        <div className="w-full h-full bg-zinc-800 flex items-center justify-center"><Lucide.PlayCircle className="w-6 h-6 text-white" /></div>
                     ) : (
                       <Image src={s.url} alt={`thumb-${i}`} fill className="object-top object-cover" />
                     )}
@@ -328,11 +338,11 @@ export default function ProductModal({ id, open, onClose, initialProduct }: Prop
                 <div className="mt-6">
                   {!isExpired ? (
                     <Button onClick={(e) => { e.stopPropagation(); handleAddToCart(); }} onPointerDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} disabled={isAddingToCart} className="mt-3 flex items-center gap-2">
-                      <Zap className="w-5 h-5" />
+                      <Lucide.Zap className="w-5 h-5" />
                       {isAddingToCart ? '加入中…' : '加入購物車'}
                     </Button>
                   ) : (
-                    <div className="rounded p-4 bg-red-50 border border-red-200 text-red-700 font-bold text-center">產品已截單</div>
+                    <div className="rounded p-4 bg-red-50 border border-red-200 text-red-700 font-bold text-center">此產品已停止銷售</div>
                   )}
                 </div>
               </>

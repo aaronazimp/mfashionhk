@@ -10,7 +10,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { ChartContainer } from "@/components/ui/chart";
 import * as Recharts from "recharts";
 import { monthlyTotals, lifetimeTrend, Sale } from "@/lib/sales";
-import { ArrowLeft, TrendingUp, Calendar, DollarSign, Package, Trophy, BarChart3 } from "lucide-react";
+import * as Lucide from "lucide-react";
 
 // Mock sales generator for demonstration — replace with real API later
 function generateMockSales(): Sale[] {
@@ -169,7 +169,7 @@ export default function BestSellersPage() {
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">總銷量</CardTitle>
-                    <Package className="h-4 w-4 text-muted-foreground" />
+                    <Lucide.Package className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
                     <div className="text-2xl font-bold">{summaryForRange.units.toLocaleString()}</div>
@@ -179,7 +179,7 @@ export default function BestSellersPage() {
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">總營收</CardTitle>
-                    <DollarSign className="h-4 w-4 text-muted-foreground" />
+                    <Lucide.DollarSign className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
                     <div className="text-2xl font-bold">${summaryForRange.revenue.toLocaleString()}</div>
@@ -189,7 +189,7 @@ export default function BestSellersPage() {
              <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">最佳月份</CardTitle>
-                    <Calendar className="h-4 w-4 text-muted-foreground" />
+                    <Lucide.Calendar className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
                     <div className="text-2xl font-bold">{bestMonth ? bestMonth.month : '—'}</div>
@@ -199,7 +199,7 @@ export default function BestSellersPage() {
              <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">最佳單日</CardTitle>
-                    <Trophy className="h-4 w-4 text-muted-foreground" />
+                    <Lucide.Trophy className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
                     <div className="text-lg font-bold truncate" title={bestDate?.date}>{bestDate ? bestDate.date : '—'}</div>
@@ -241,7 +241,7 @@ export default function BestSellersPage() {
                                 </div>
                                 <div className="text-right">
                                     <div className="text-sm font-medium">${s.revenue?.toLocaleString()}</div>
-                                    <TrendingUp className="w-3 h-3 text-green-500 ml-auto" />
+                                    <Lucide.TrendingUp className="w-3 h-3 text-green-500 ml-auto" />
                                 </div>
                              </div>
                         ))}

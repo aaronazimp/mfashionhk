@@ -50,15 +50,17 @@ function AlertDialogContent({
 }: React.ComponentProps<typeof AlertDialogPrimitive.Content>) {
   return (
     <AlertDialogPortal>
-      <AlertDialogOverlay />
-      <AlertDialogPrimitive.Content
-        data-slot="alert-dialog-content"
-        className={cn(
-          'bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border p-6 shadow-lg duration-200 sm:max-w-lg',
-          className,
-        )}
-        {...props}
-      />
+      <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+        <AlertDialogOverlay className="absolute inset-0 z-40" />
+        <AlertDialogPrimitive.Content
+          data-slot="alert-dialog-content"
+          className={cn(
+            'bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 relative z-50 grid w-full gap-4 rounded-lg border p-6 shadow-lg duration-200 max-w-[calc(100%-6rem)] max-h-[calc(100%-6rem)] sm:max-w-lg overflow-auto',
+            className,
+          )}
+          {...props}
+        />
+      </div>
     </AlertDialogPortal>
   )
 }

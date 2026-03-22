@@ -1,125 +1,81 @@
-"use client"
+"use client";
 
-import { useRef, useEffect, useState } from "react"
-import { Play, Volume2, VolumeX } from "lucide-react"
+import React, { useEffect, useRef, useState } from "react";
 
-interface NativeVideoPlayerProps {
-  url: string
-  poster?: string
-  isActive: boolean
+interface Props {
+  url?: string;
+  poster?: string;
+  isActive?: boolean;
 }
 
-export default function NativeVideoPlayer({ url, poster, isActive }: NativeVideoPlayerProps) {
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const [isPlaying, setIsPlaying] = useState(false)
-  const [isMuted, setIsMuted] = useState(true)
-  const longPressTimeoutRef = useRef<number | null>(null)
-  const longPressTriggeredRef = useRef(false)
-  const wasPlayingBeforeRef = useRef(false)
+export default function NativeVideoPlayer({ url, poster, isActive }: Props) {
+  const ref = useRef<HTMLVideoElement | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [error, setError] = useState<any>(null);
 
   useEffect(() => {
-    if (isActive) {
-      if (videoRef.current) {
-        // Ensure muted is set for autoplay policy
-        videoRef.current.muted = true;
-        setIsMuted(true);
-        // Reset to beginning if needed or just play
-        const playPromise = videoRef.current.play()
-        if (playPromise !== undefined) {
-          playPromise
-            .then(() => setIsPlaying(true))
-            .catch((error) => {
-              console.log("Autoplay prevented:", error)
-              setIsPlaying(false)
-            })
+    const el = ref.current;
+    if (!el) return;
+    const attemptPlay = async () => {
+      try {
+        if (isActive) {
+          await el.play();
+          setIsPlaying(true);
+        } else {
+          el.pause();
+          setIsPlaying(false);
         }
+      } catch (err) {
+        setError(err);
+        // Don't spam console with empty objects — provide helpful debug info
+        console.debug('NativeVideoPlayer: play() failed', err);
       }
-    } else {
-      if (videoRef.current) {
-        videoRef.current.pause()
-        setIsPlaying(false)
-      }
-    }
-  }, [isActive])
+    };
 
-  const togglePlay = () => {
-    if (videoRef.current) {
-      if (videoRef.current.paused) {
-        videoRef.current.play()
-        setIsPlaying(true)
-      } else {
-        videoRef.current.pause()
-        setIsPlaying(false)
-      }
-    }
-  }
+    const onCanPlay = () => {
+      if (isActive) attemptPlay();
+    };
 
-  const toggleMute = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (videoRef.current) {
-      videoRef.current.muted = !videoRef.current.muted
-      setIsMuted(videoRef.current.muted)
-    }
-  }
+    const onPlay = () => setIsPlaying(true);
+    const onPause = () => setIsPlaying(false);
+    const onError = (ev: any) => {
+      const detail = ev?.target?.error || ev?.message || ev;
+      setError(detail);
+      console.debug('NativeVideoPlayer: video error', detail);
+    };
+
+    el.addEventListener('canplay', onCanPlay);
+    el.addEventListener('play', onPlay);
+    el.addEventListener('pause', onPause);
+    el.addEventListener('error', onError as EventListener);
+
+    // initial attempt
+    attemptPlay();
+
+    return () => {
+      el.removeEventListener('canplay', onCanPlay);
+      el.removeEventListener('play', onPlay);
+      el.removeEventListener('pause', onPause);
+      el.removeEventListener('error', onError as EventListener);
+    };
+  }, [url, isActive]);
+
+  if (!url) return <div className="w-full h-full flex items-center justify-center text-zinc-400">No video</div>;
 
   return (
-    <div
-      className="relative w-full h-full bg-black flex items-center justify-center z-0 cursor-pointer group"
-      onPointerDown={(e) => {
-        e.stopPropagation();
-        // record whether it was playing before long press
-        wasPlayingBeforeRef.current = !!(videoRef.current && !videoRef.current.paused)
-        longPressTriggeredRef.current = false
-        if (longPressTimeoutRef.current) {
-          window.clearTimeout(longPressTimeoutRef.current)
-          longPressTimeoutRef.current = null
-        }
-        longPressTimeoutRef.current = window.setTimeout(() => {
-          longPressTriggeredRef.current = true
-          // pause while holding
-          if (videoRef.current && !videoRef.current.paused) {
-            videoRef.current.pause()
-            setIsPlaying(false)
-          }
-        }, 350)
-      }}
-      onPointerUp={(e) => {
-        e.stopPropagation();
-        if (longPressTimeoutRef.current) {
-          window.clearTimeout(longPressTimeoutRef.current)
-          longPressTimeoutRef.current = null
-        }
-        if (longPressTriggeredRef.current) {
-          // was a long press: resume if it was playing before
-          longPressTriggeredRef.current = false
-          if (wasPlayingBeforeRef.current && videoRef.current) {
-            const p = videoRef.current.play()
-            if (p !== undefined) {
-              p.then(() => setIsPlaying(true)).catch(() => setIsPlaying(false))
-            }
-          }
-          return
-        }
-        // short tap: toggle mute
-        if (videoRef.current) {
-          videoRef.current.muted = !videoRef.current.muted
-          setIsMuted(videoRef.current.muted)
-        }
-      }}
-      onTouchStart={(e) => { e.stopPropagation(); }}
-      onTouchEnd={(e) => { e.stopPropagation(); }}
-    >
+    <div className="w-full h-full relative">
       <video
-        ref={videoRef}
+        ref={ref}
         src={url}
-        poster={poster}
-        className="w-full h-full object-contain relative z-10 pointer-events-none"
+        className="w-full h-full object-cover object-center"
         playsInline
-        webkit-playsinline="true"
-        x5-playsinline="true"
-        muted
-        loop
+        controls
       />
+      {error && (
+        <div className="absolute inset-0 flex items-center justify-center text-white bg-black/40">
+          <div className="text-sm">Video error</div>
+        </div>
+      )}
     </div>
-  )
+  );
 }

@@ -10,7 +10,8 @@ import { Dialog, DialogContent, DialogTrigger, DialogTitle } from "@/components/
 import { Header } from "@/components/header";
 import { Product } from "@/lib/products";
 import { supabase } from "@/lib/supabase";
-import { ChevronLeft, ChevronRight, ArrowLeft, Loader2 } from "lucide-react";
+import * as Lucide from "lucide-react";
+import { Spinner } from '@/components/ui/spinner'
 
 function WhatsAppIcon(props: React.ComponentProps<'svg'>) {
   return (
@@ -74,13 +75,10 @@ export default function ProductDetailPage({
         setProduct(null);
       } else if (data) {
           const variations = data.SKU_variations || [];
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const uniqueColors = Array.from(new Set(variations.map((v: any) => v.color).filter(Boolean))) as string[];
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const uniqueSizes = Array.from(new Set(variations.map((v: any) => v.size).filter(Boolean))) as string[];
           
           const measurements: Record<string, SizeMeasurement> = {};
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           variations.forEach((v: any) => {
             if (v.size && !measurements[v.size]) {
               measurements[v.size] = {
@@ -94,15 +92,13 @@ export default function ProductDetailPage({
           setSizeMeasurements(measurements);
 
           const images = data.SKU_images
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             ?.sort((a: any, b: any) => (a.imageIndex || 0) - (b.imageIndex || 0))
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             .map((img: any) => img.imageurl) || [];
 
           setProduct({
             id: data.id.toString(),
             sku: data.SKU,
-            name: data.SKU, // Fallback to SKU as name
+            name: data.SKU,
             price: data.regular_price || 0,
             originalPrice: undefined,
             description: data.remark || "",
@@ -114,7 +110,7 @@ export default function ProductDetailPage({
             isSale: !!data.special_discount,
             madeInKorea: data.madeinkorea,
             date: data.SKU_date ? new Date(data.SKU_date) : (data.created_at ? new Date(data.created_at) : undefined)
-          });
+          } as Product);
       }
       setLoading(false);
     }
@@ -124,7 +120,7 @@ export default function ProductDetailPage({
   if (loading) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-[#C4A59D]" />
+        <Spinner className="w-8 h-8 text-[#C4A59D]" />
       </div>
     );
   }
@@ -163,15 +159,15 @@ export default function ProductDetailPage({
   return (
     <div className="min-h-screen bg-white">
       <Header />
-      <main className="container mx-auto px-4 pt-8 pb-32">
+      <main className="container mx-auto px-4 md:px-6 lg:px-8 pt-8 lg:pt-12 pb-32 lg:pb-40">
         {/* Breadcrumb */}
         <div className="mb-6">
           <button
-            onClick={() => window.close()}
+            onClick={() => router.push('/flash-sale')}
             className="inline-flex items-center text-sm text-muted-foreground hover:text-[#C4A59D] transition-colors bg-transparent border-0 p-0 cursor-pointer"
           >
-            <ArrowLeft className="w-4 h-4 mr-1" />
-            關閉頁面
+            <Lucide.ArrowLeft className="w-4 h-4 mr-1" />
+            回上一頁
           </button>
         </div>
 
@@ -180,7 +176,7 @@ export default function ProductDetailPage({
           <div className="space-y-4">
             <Dialog>
               <DialogTrigger asChild>
-                <div className="relative aspect-[2/3] overflow-hidden rounded-lg bg-muted cursor-zoom-in group">
+                <div className="relative aspect-[2/3] md:aspect-[3/4] lg:aspect-[4/5] overflow-hidden rounded-lg bg-muted cursor-zoom-in group">
                   <Image
                     src={product.images[selectedImage] || "/placeholder.svg"}
                     alt={product.name}
@@ -196,7 +192,7 @@ export default function ProductDetailPage({
                         }}
                         className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/80 flex items-center justify-center hover:bg-white transition-colors z-10"
                       >
-                        <ChevronLeft className="w-5 h-5" />
+                        <Lucide.ChevronLeft className="w-5 h-5" />
                         <span className="sr-only">上一張</span>
                       </button>
                       <button
@@ -206,7 +202,7 @@ export default function ProductDetailPage({
                         }}
                         className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/80 flex items-center justify-center hover:bg-white transition-colors z-10"
                       >
-                        <ChevronRight className="w-5 h-5" />
+                        <Lucide.ChevronRight className="w-5 h-5" />
                         <span className="sr-only">下一張</span>
                       </button>
                     </>
@@ -245,7 +241,7 @@ export default function ProductDetailPage({
                         }}
                         className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
                       >
-                        <ChevronLeft className="w-8 h-8" />
+                        <Lucide.ChevronLeft className="w-8 h-8" />
                       </button>
                       <button
                         onClick={(e) => {
@@ -254,7 +250,7 @@ export default function ProductDetailPage({
                         }}
                         className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
                       >
-                        <ChevronRight className="w-8 h-8" />
+                        <Lucide.ChevronRight className="w-8 h-8" />
                       </button>
                  </div>
               </DialogContent>
@@ -266,7 +262,7 @@ export default function ProductDetailPage({
                   <button
                     key={index}
                     onClick={() => setSelectedImage(index)}
-                    className={`relative w-20 h-24 rounded-md overflow-hidden border-2 transition-colors ${
+                    className={`relative w-14 h-20 md:w-20 md:h-24 lg:w-24 lg:h-28 rounded-md overflow-hidden border-2 transition-colors ${
                       selectedImage === index
                         ? "border-[#C4A59D]"
                         : "border-transparent"
@@ -305,11 +301,11 @@ export default function ProductDetailPage({
                   )}
                 </div>
               </div>
-              <h1 className="text-xl font-bold text-foreground mb-4">
+              <h1 className="text-xl md:text-2xl lg:text-3xl font-bold text-foreground mb-4">
                 貨號: {product.sku}
               </h1>
               <div className="flex items-center gap-3">
-                <span className="text-3xl font-bold text-[#C4A59D]">
+                <span className="text-2xl md:text-3xl lg:text-4xl font-bold text-[#C4A59D]">
                   HK${product.price.toLocaleString()}
                 </span>
                 {product.originalPrice && (
@@ -320,7 +316,7 @@ export default function ProductDetailPage({
               </div>
             </div>
 
-            <p className="text-muted-foreground leading-relaxed">
+            <p className="text-muted-foreground leading-relaxed md:text-base lg:text-lg">
               {product.description}
             </p>
 
@@ -356,7 +352,7 @@ export default function ProductDetailPage({
                   <button
                     key={size}
                     onClick={() => setSelectedSize(index)}
-                    className={`w-12 h-12 rounded-md border text-sm font-medium transition-colors ${
+                    className={`w-10 h-10 md:w-12 md:h-12 rounded-md border text-sm font-medium transition-colors ${
                       selectedSize === index
                         ? "border-[#C4A59D] bg-[#C4A59D] text-white"
                         : "border-border text-foreground hover:border-[#C4A59D] hover:text-[#C4A59D]"
@@ -406,7 +402,7 @@ export default function ProductDetailPage({
       </main>
 
       {/* Sticky WhatsApp Bar */}
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/95 backdrop-blur border-t border-border z-50">
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/95 backdrop-blur border-t border-border z-50 lg:hidden">
         <Button
           asChild
           size="lg"
@@ -417,6 +413,12 @@ export default function ProductDetailPage({
             WhatsApp 諮詢
           </a>
         </Button>
+      </div>
+      {/* Desktop floating WhatsApp */}
+      <div className="hidden lg:flex fixed right-8 bottom-1/3 z-50">
+        <a href={whatsappLink} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center w-14 h-14 rounded-full bg-[#25D366] hover:bg-[#128C7E] text-white shadow-lg">
+          <WhatsAppIcon className="w-6 h-6" />
+        </a>
       </div>
     </div>
   );

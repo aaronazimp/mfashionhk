@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { CheckCircle, Clock, Home } from "lucide-react";
+import * as Lucide from "lucide-react";
 import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
 
@@ -48,7 +48,7 @@ export default async function WaitlistPage({
     <div className="min-h-screen bg-zinc-50 flex items-center justify-center p-4">
       <div className="bg-white max-w-md w-full rounded-2xl shadow-xl p-8 text-center space-y-6">
         <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-2">
-          <Clock className="w-10 h-10 text-orange-600" />
+          <Lucide.Clock className="w-10 h-10 text-orange-600" />
         </div>
         
         <div className="space-y-2">

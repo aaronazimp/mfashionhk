@@ -1,141 +1,209 @@
+
+
+// Types for RPC `get_single_sku_details`
+export interface SingleSkuImage {
+  imageurl: string
+  imageIndex: number
+}
+
+export interface SingleSkuColor {
+  id: number
+  color: string
+  stock: number
+  reels_quota: number
+  [key: string]: any
+}
+
+export interface SingleSkuVariation {
+  size: string | null
+  hip: string | null
+  chest: string | null
+  waist: string | null
+  length: string | null
+  colors: SingleSkuColor[]
+  [key: string]: any
+}
+
+export interface SingleSkuDetails {
+  id: number
+  SKU: string
+  type: string | null
+  images: SingleSkuImage[]
+  remark: string | null
+  SKU_date: string | null
+  created_at: string | null
+  variations: SingleSkuVariation[]
+  madeinkorea: boolean
+  regular_price: number | null
+  is_upsell_item: boolean
+  reels_deadline: string | null
+  reels_video_url: string | null
+  special_discount: boolean
+  shipping_surcharge: number | null
+  is_discount_eligible: boolean
+  [key: string]: any
+}
+
+// Type for RPC `get_sku_details_for_drawer(p_sku_id BIGINT)`
+export interface SkuDetailsForDrawer {
+  id: number
+  SKU: string
+  type: string | null
+  images: Array<{
+    url: string
+    index: number
+  }>
+  remark?: string
+  variations?: Array<{
+    size?: string
+    options: Array<{
+      id: number
+      color?: string
+      stock?: number
+      [key: string]: any
+    }>
+  }>
+  madein_korea?: boolean
+  regular_price?: number | null
+  reels_deadline?: string | null
+  shipping_surcharge?: number | null
+  is_discount_eligible?: boolean
+  [key: string]: any
+}
+
+// Types for RPC `get_cart_and_upsellitems(p_session_token TEXT)`
+export interface CartRpcItem {
+  SKU: string
+  size?: string | null
+  color?: string | null
+  sku_id?: number | string
+  status?: string | null
+  quantity?: number
+  expires_at?: string | null
+  main_image?: string | null
+  cart_item_id?: string | null
+  regular_price?: number | null
+  is_upsell_item?: boolean
+  is_discount_eligible?: boolean
+  [key: string]: any
+}
+
+export interface UpsellRpcItem {
+  id: number | string
+  SKU: string
+  main_image?: string | null
+  regular_price?: number | null
+  is_discount_eligible?: boolean
+  [key: string]: any
+}
+
+export interface CustomerProfileRpc {
+  name?: string | null
+  address?: string | null
+  whatsapp?: string | null
+  [key: string]: any
+}
+
+export interface GetCartAndUpsellItemsResponse {
+  cart_items: CartRpcItem[]
+  upsell_items: UpsellRpcItem[]
+  customer_profile?: CustomerProfileRpc | null
+  [key: string]: any
+}
+
+// Types for payment page RPC `get_payment_page_data(p_transaction_id TEXT)`
+export interface PaymentPageItem {
+  id: string
+  price: number
+  remark?: string | null
+  status?: string
+  quantity?: number
+  sku_code?: string
+  image_url?: string | null
+  row_total?: number
+  variation?: string | null
+  is_in_current_txn?: boolean
+  [key: string]: any
+}
+
+export interface PaymentPageOrder {
+  transaction_id?: string
+  order_number?: string
+  created_at?: string
+  subtotal?: number
+  shipping_fee?: number
+  total_to_pay?: number
+  customer_name?: string
+  status?: string
+  receipt_url?: string | null
+  base64_image?: string | null
+  whatsapp?: string | null
+  payment_proof_url?: string | null
+  deadline?: string | null
+  payment_deadline?: string | null
+
+  // Items grouped by original order number
+  pay_now_groups?: Record<string, PaymentPageItem[]>
+
+  items_pay_now?: PaymentPageItem[]
+  items_waitlist?: PaymentPageItem[]
+  items_cancelled?: PaymentPageItem[]
+
+  // Legacy / convenience fields
+  price?: number
+  product_name?: string
+  sku?: string
+  sku_img_url?: string
+  sku_code_snapshot?: string
+  variation_snapshot?: string
+  quantity?: number
+  items?: Array<{
+    id: string
+    sku?: string
+    price?: number
+    quantity?: number
+    variation?: string
+    row_total?: number
+    sku_img_url?: string
+    status?: string
+    expires_at?: string | null
+    [key: string]: any
+  }>
+
+  [key: string]: any
+}
+
+// Shared `Product` type kept for compatibility with existing UI components.
 export interface Product {
-  id: string;
-  sku: string;
-  name: string;
-  price: number;
-  originalPrice?: number;
-  description: string;
-  images: string[];
-  colors: string[];
-  sizes: string[];
-  category: string;
-  isNew?: boolean;
-  isSale?: boolean;
-  reelsUrl?: string; // Instagram Reels URL
-  videoUrl?: string; // YouTube/Other Video URL
-  deadline?: string; // Order deadline
-  totalQuota?: number;
-  date?: Date; // Added for SKU_date
-  madeInKorea?: boolean;
+  id: string | number
+  sku: string
+  name: string
+  price: number
+  originalPrice?: number
+  description?: string
+  images: string[]
+  colors: string[]
+  sizes: string[]
+  category?: string
+  isNew?: boolean
+  isSale?: boolean
+  reelsUrl?: string | null
+  videoUrl?: string | null
+  deadline?: string | Date | null
+  totalQuota?: number
+  date?: string | Date | null
+  madeInKorea?: boolean
+  rawRpc?: any
+  [key: string]: any
 }
 
-import mockSkus from './mock-skus';
-
-export const products: Product[] = [
-  {
-    id: "1",
-    sku: "20260124M01",
-    name: "優雅絲綢連衣裙",
-    price: 1280,
-    originalPrice: 1680,
-    description: "採用頂級絲綢面料，優雅垂墜的剪裁設計，適合各種正式場合。柔軟舒適的質感，展現女性的優雅氣質。",
-    images: [
-      "/placeholder.svg?height=600&width=400",
-      "/placeholder.svg?height=600&width=400",
-      "/placeholder.svg?height=600&width=400",
-    ],
-    colors: ["米白", "藕粉", "淺灰"],
-    sizes: ["S", "M", "L", "XL"],
-    category: "連衣裙",
-    isNew: true,
-    isSale: true,
-  },
-  {
-    id: "2",
-    sku: "20260124M02",
-    name: "經典羊絨大衣",
-    price: 3680,
-    description: "100%純羊絨，經典雙排扣設計，保暖舒適，展現都市時尚風格。",
-    images: [
-      "/placeholder.svg?height=600&width=400",
-      "/placeholder.svg?height=600&width=400",
-    ],
-    colors: ["駝色", "黑色", "深藍"],
-    sizes: ["S", "M", "L"],
-    category: "外套",
-    isNew: true,
-  },
-  {
-    id: "3",
-    sku: "20260124M03",
-    name: "法式蕾絲上衣",
-    price: 880,
-    description: "精緻蕾絲工藝，透氣舒適，展現女性柔美氣質。",
-    images: [
-      "/placeholder.svg?height=600&width=400",
-      "/placeholder.svg?height=600&width=400",
-    ],
-    colors: ["白色", "黑色"],
-    sizes: ["S", "M", "L", "XL"],
-    category: "上衣",
-  },
-  {
-    id: "4",
-    sku: "20260124M04",
-    name: "高腰闊腿褲",
-    price: 980,
-    originalPrice: 1280,
-    description: "高腰設計拉長腿部線條，闊腿剪裁舒適優雅。",
-    images: [
-      "/placeholder.svg?height=600&width=400",
-      "/placeholder.svg?height=600&width=400",
-    ],
-    colors: ["黑色", "卡其", "深灰"],
-    sizes: ["S", "M", "L", "XL"],
-    category: "褲裝",
-    isSale: true,
-  },
-  {
-    id: "5",
-    sku: "20260124M05",
-    name: "印花雪紡裙",
-    price: 780,
-    description: "輕盈雪紡面料，優美印花設計，飄逸動人。",
-    images: [
-      "/placeholder.svg?height=600&width=400",
-      "/placeholder.svg?height=600&width=400",
-    ],
-    colors: ["碎花", "純色"],
-    sizes: ["S", "M", "L"],
-    category: "裙裝",
-  },
-  {
-    id: "6",
-    sku: "20260124M06",
-    name: "簡約針織衫",
-    price: 680,
-    description: "柔軟針織面料，百搭款式，四季皆宜。",
-    images: [
-      "/placeholder.svg?height=600&width=400",
-      "/placeholder.svg?height=600&width=400",
-    ],
-    colors: ["米白", "淺粉", "淺藍", "黑色"],
-    sizes: ["S", "M", "L", "XL"],
-    category: "上衣",
-    isNew: true,
-  },
-];
-
-export function getProductById(id: string): Product | undefined {
-  return products.find((p) => p.id === id);
+// Minimal stub for updating a product by SKU. This repository previously
+// had an in-memory helper; keep a small stub so API routes that import
+// `updateProductBySku` continue to compile. Implement proper persistence
+// elsewhere as needed.
+export function updateProductBySku(originalSku: string, update: Partial<Product>): Product | null {
+  // No-op stub: return null to indicate SKU not found.
+  return null
 }
 
-export function getProductBySku(sku: string): Product | undefined {
-  return products.find((p) => p.sku === sku);
-}
 
-export function updateProductBySku(sku: string, update: Partial<Product>): Product | undefined {
-  const p = getProductBySku(sku);
-  if (!p) return undefined;
-  Object.assign(p, update);
-  return p;
-}
-
-// In development, include mock SKUs to make testing easier
-if (process.env.NODE_ENV !== 'production') {
-  try {
-    products.push(...mockSkus);
-  } catch (e) {
-    // ignore
-  }
-}

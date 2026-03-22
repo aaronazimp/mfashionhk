@@ -1,699 +1,849 @@
 "use client";
 
-import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, XIcon, Volume2, VolumeX } from 'lucide-react';
-import { Input } from "@/components/ui/input";
-import { Toaster } from '@/components/ui/toaster'
-import { useToast } from '@/hooks/use-toast'
-import { ToastAction } from "@/components/ui/toast";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { groupAndSortRegistrations, type Registration, mapSupabaseOrderToRegistration } from "@/lib/orders";
-import Image from "next/image";
-import { products } from "@/lib/products";
-import OrderModal from '@/components/order-modal'
+import { Badge } from "@/components/ui/badge";
+import React, { useState, useEffect, useRef } from "react";
+import { useSearchParams, useRouter } from 'next/navigation'
+import * as Lucide from 'lucide-react';
 import { supabase } from "@/lib/supabase";
+import { getMasterOrderList } from '@/lib/orderService';
+import { ListStatusLabel, ListStatusBg } from "@/lib/orderStatus";
+import { HeaderTabMenu } from '@/components/header-tab-menu';
+import OrderDetailsModalAll from '@/components/order-details-modal-all';
+import BatchConfirmModal from '@/components/batchProcess/BatchConfirmModal';
+import BatchPackingModal from '@/components/batchProcess/BatchPackingModal';
+import BatchPaymentReminderModal from '@/components/batchProcess/BatchPaymentReminderModal';
+import BatchVerifiedModal from '@/components/batchProcess/BatchVerifiedModal';
+import BatchShippingModal from '@/components/batchProcess/BatchShippingModal';
+import EmptyWidget from '@/components/EmptyWidget';
+import { List, ListItem } from '@/components/ui/list';
 
 export default function OrdersPage() {
-  const [registrations, setRegistrations] = useState<Registration[]>([]);
-  const [view, setView] = useState<"all" | "action_needed" | "completed">("action_needed");
-  const [searchSku, setSearchSku] = useState<string>("");
-  const [selectedSku, setSelectedSku] = useState<string | null>(null);
-  const [modalOpen, setModalOpen] = useState<boolean>(false);
-  const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
-  const [page, setPage] = useState<number>(1);
-  const [totalCount, setTotalCount] = useState<number>(0);
-  const ITEMS_PER_PAGE = 10;
+  const { loading: countLoading, meta: countMeta, statusCounts } = useFetchOrders('all', 1, 1, false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalCustomerId, setModalCustomerId] = useState<string | null>(null);
+  const [modalPriorityStatus, setModalPriorityStatus] = useState<string | null>(null);
+  // Batch modal state lifted to top-level to avoid being affected by
+  // CustomerList re-renders which caused flicker.
+  const [batchModalOpenTop, setBatchModalOpenTop] = useState(false)
+  const [batchModalSelectedOrderKeys, setBatchModalSelectedOrderKeys] = useState<string[]>([])
+  const [batchModalCustomerIds, setBatchModalCustomerIds] = useState<string[]>([])
+  const [batchModalStatusFilter, setBatchModalStatusFilter] = useState<string | 'all'>('all')
+  const searchParams = useSearchParams()
+  const router = useRouter()
+
+  // Open batch modal when URL contains modal/status params (e.g. from OrderDetails navigation)
+  useEffect(() => {
+    const modal = searchParams?.get?.('modal')
+    const status = searchParams?.get?.('status')
+    if (!modal && !status) return
+
+    // Prefer explicit `status` param, otherwise map modal -> status
+    const resolvedStatus = status ?? (modal === 'batchConfirm' ? 'allocated' : modal === 'batchPaymentReminder' ? 'confirmed' : modal === 'batchVerified' ? 'paid' : modal === 'batchShipping' ? 'pending_to_ship' : null)
+    if (!resolvedStatus) return
+
+    const ordersParam = searchParams?.get('orders') || ''
+    const customerParam = searchParams?.get('customer') || ''
+
+    setBatchModalStatusFilter(resolvedStatus as any)
+    setBatchModalSelectedOrderKeys(ordersParam ? ordersParam.split(',') : [])
+    setBatchModalCustomerIds(customerParam ? [customerParam] : [])
+    setBatchModalOpenTop(true)
+
+    // remove modal params from URL to avoid re-triggering on navigation back/refresh
+    try {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('modal')
+      url.searchParams.delete('status')
+      url.searchParams.delete('orders')
+      url.searchParams.delete('customer')
+      router.replace(url.pathname + url.search)
+    } catch (e) {}
+  }, [searchParams?.toString()])
   
-  const [showAudioConsent, setShowAudioConsent] = useState(true);
-  const [audioEnabled, setAudioEnabled] = useState(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  // Cash register "Ka-Ching" sound
-  const NOTIFICATION_SOUND = "https://www.myinstants.com/media/sounds/ka-ching.mp3";
 
-  const { toast: pushToast } = useToast();
-  const wakeLockRef = React.useRef<any>(null);
-
-  // Fetch orders from Supabase
+  
+  
   useEffect(() => {
-    const fetchOrders = async () => {
-      // Fetch all for local filtering (since we need SKU grouping logic which is cross-row)
-      // Note: Ideally we paginate, but for now we fetch range. 
-      // Warning: The requested logic requires *group* level stats. 
-      // If we page the input of groupAndSort, we might miss items for a SKU if they are split across pages.
-      // However, keeping existing behavior of fetching one page of orders and grouping them.
-      // Ideally we should group on backend or fetch more. for now we stick to existing fetch logic
-      // but simplistic status filtering might be weird if an SKU has items on page 1 and page 2.
-      // Assuming 'created_at' order keeps them somewhat together or user accepts page-by-page.
-      
-      const from = (page - 1) * ITEMS_PER_PAGE;
-      const to = from + ITEMS_PER_PAGE - 1;
-
-      const { data, error, count } = await supabase
-        .from('reels_orders')
-        .select(`
-          *,
-          price,
-          SKU_details (
-            regular_price,
-            SKU_date,
-            reels_deadline,
-            SKU_images (
-              imageurl,
-              imageIndex
-            )
-          )
-        `, { count: 'exact' })
-        .order('created_at', { ascending: false })
-        .range(from, to);
-
-      if (error) {
-        console.error("Error fetching orders:", error);
-        pushToast({
-          title: "無法載入訂單",
-          description: error.message,
-          variant: "destructive",
-        });
-        return;
-      }
-
-      setTotalCount(count || 0);
-
-      if (data) {
-        const mapped: Registration[] = data.map(mapSupabaseOrderToRegistration);
-        setRegistrations(mapped);
-      }
-    };
-
-    fetchOrders();
-  }, [pushToast, page]);
-
-  // Request a screen Wake Lock on mount and re-request on visibilitychange
-  useEffect(() => {
-    const requestLock = async () => {
+    // subscribe to realtime changes on `reels_orders` and trigger a refresh
+    console.log('setting up reels_orders subscription', { supabaseExists: !!supabase });
+    try {
+      const channel = supabase.channel('reels-order-listener');
       try {
+        // log any existing channels (if API available)
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
         // @ts-ignore
-        if ((navigator as any).wakeLock) {
-          // @ts-ignore
-          wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
-          wakeLockRef.current.addEventListener?.('release', () => {
-            // noop
-          });
-        }
+        console.log('supabase.getChannels?', typeof supabase.getChannels === 'function' ? supabase.getChannels() : 'no-getChannels');
       } catch (e) {
-        // ignore
+        console.warn('could not call getChannels()', e);
       }
-    };
-
-    const releaseLock = async () => {
-      try {
-        if (wakeLockRef.current) {
-          await wakeLockRef.current.release();
-          wakeLockRef.current = null;
-        }
-      } catch (e) {
-        // ignore
-      }
-    };
-
-    requestLock();
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible') requestLock();
-    };
-    document.addEventListener('visibilitychange', onVisibility);
-
-    return () => {
-      document.removeEventListener('visibilitychange', onVisibility);
-      releaseLock();
-    };
-  }, []);
-
-  // no-op: wake lock is requested automatically and not persisted
-
-  const formatTime = (date: Date) => {
-    const now = new Date();
-    const diff = Math.floor((now.getTime() - date.getTime()) / 1000 / 60);
-    if (diff < 1) return "剛剛";
-    if (diff < 60) return `${diff} 分鐘前`;
-    return `${Math.floor(diff / 60)} 小時前`;
-  };
-
-  // Group and sort using shared helper, but pass 'all' view to get raw groups, then filter locally
-  const allGroups = useMemo(() => groupAndSortRegistrations(registrations, { view: 'all', searchSku }), [registrations, searchSku]);
-
-  // Apply new Filter Logic
-  const { filteredGroups, counts } = useMemo(() => {
-    // 1. Calculate categories for all groups
-    const classified = allGroups.map(g => {
-      // Definition of completed: all items are in a terminal state
-      const isAllCompleted = g.items.every(i => 
-        ['verified', 'completed', 'void', 'out-of-stock'].includes(i.status)
-      );
-
-      const category = isAllCompleted ? 'completed' : 'action_needed';
-      
-      return { group: g, category };
-    });
-
-    // 2. Count
-    const counts = {
-      all: classified.length,
-      action_needed: classified.filter(c => c.category === 'action_needed').length,
-      completed: classified.filter(c => c.category === 'completed').length
-    };
-
-    // 3. Filter based on current view
-    const filtered = classified.filter(c => {
-      if (view === 'all') return true;
-      return c.category === view;
-    }).map(c => c.group);
-
-    return { filteredGroups: filtered, counts };
-  }, [allGroups, view]);
-  
-  const groups = filteredGroups;
-
-  // WhatsApp helpers
-  const buildWhatsappUrl = (phone: string, text: string) => {
-    const pn = (phone || "").replace(/\D/g, "");
-    const encoded = encodeURIComponent(text);
-    return `https://wa.me/852${pn}?text=${encoded}`;
-  };
-
-  // Find product by matching digit-only SKU portions (orders use a different SKU format)
-  const findProductForSku = (orderSku: string) => {
-    const digits = (orderSku || "").replace(/\D/g, "");
-    return products.find((p) => (p.sku || "").replace(/\D/g, "") === digits);
-  };
-
-  const sendWhatsapp = async (r: Registration, type: string, options?: { skipRedirect?: boolean, statusOverride?: string, suppressToast?: boolean }) => {
-    const name = r.customerName ?? "顧客";
-    const sku = r.sku ?? "";
-    const variation = r.variation ?? "";
-    let text = "";
-    
-    // Status Logic: Allow override or derive from action type
-    let status = options?.statusOverride ?? r.status;
-    const isOverride = !!options?.statusOverride;
-
-    if (!isOverride) {
-        if (type === "confirm") {
-          text = `您好 ${name}，您的訂單 ${sku} (${variation}) 已確認。請於24小時內完成付款。若需付款資料或支付連結，請回覆本訊息。謝謝！`;
-          status = "confirmed";
-        } else if (type === "out-of-stock") {
-          text = `您好 ${name}，很抱歉，您預約的商品 ${sku} (${variation}) 目前缺貨。如需退款或等待補貨，請告訴我們。造成不便敬請見諒。`;
-          status = "out-of-stock";
-        } else if (type === "verify") {
-          text = `您好 ${name}，我們已收到您的付款證明並確認訂單 ${sku} (${variation})。貨品寄出時會再通知您，謝謝！`;
-          status = "verified";
-        } else if (type === "void") {
-          status = "void";
-        } else if (type === "archive") {
-          status = "completed";
-        } else if (type === "force-pay") {
-          status = "paid";
-        } else if (type === "mark-paid") {
-          status = "verified";
-        }
-    }
-
-    if (text) {
-      const url = buildWhatsappUrl(r.whatsapp, text);
-      if (!options?.skipRedirect) {
+      channel.on('postgres_changes', { event: '*', schema: 'public', table: 'reels_orders' }, (payload) => {
+        console.log('reels_orders change received', payload);
         try {
-          window.open(url, "_blank");
+          const p: any = payload || {}
+          // Attempt to extract relevant identifiers
+          const maybeItemId = p?.new?.id ?? p?.old?.id ?? p?.record?.id ?? null
+          const maybeCustomerId = p?.new?.customer_id ?? p?.old?.customer_id ?? p?.new?.customer ?? null
+
+          // Previously suppression checks prevented realtime-driven refreshes
+          // for specific item ids or modal-open customers. Those checks were
+          // removed so the UI receives live updates immediately.
+
+          // Dispatch orders:refresh for all realtime events so the UI stays
+          // fully in sync with DB changes (previously some updates were
+          // filtered out as "non-meaningful").
+          window.dispatchEvent(new CustomEvent('orders:refresh', { detail: payload }))
         } catch (e) {
-          window.location.href = url;
+          console.warn('orders:refresh dispatch failed', e)
         }
-      }
-    }
+      })
 
-    // DB Update
-    if (isOverride || status !== r.status) {
-        let updatePayload: any = { status: status }
-        // For mark-paid (Manual Payment), we record extra metadata
-        if (type === 'mark-paid') {
-           updatePayload = {
-               ...updatePayload,
-               verified_at: new Date().toISOString(),
-               payment_method: 'manual'
-           }
-        }
-        
-        const { error } = await supabase
-            .from('reels_orders')
-            .update(updatePayload)
-            .eq('id', r.id);
-
-        if (error) {
-            console.error("Failed to update status", error);
-            pushToast({
-                title: "更新失敗",
-                description: error.message,
-                variant: "destructive",
-            });
-            return;
-        }
-    }
-
-    // optimistic update: mark the single order as processed so user sees it's handled
-    const updater = (prev: Registration[]) => prev.map((item) => {
-        if (item.id !== r.id) return item;
-        return { ...item, status: status as Registration['status'], adminAction: type as any };
-    });
-
-    setRegistrations(updater);
-
-    if (!options?.suppressToast) {
-        // Map types to Chinese - duplicating map here to avoid export issues
-        const typeMap: Record<string, string> = {
-            'confirm': '確認訂單', 'out-of-stock': '標記缺貨', 'verify': '核對收款', 
-            'archive': '歸檔', 'undo': '撤銷操作', 'void': '取消訂單',
-            'resend': '補發通知', 'force-pay': '標記付款', 'mark-paid': '手動收款'
-        }
-        pushToast({
-            title: "已處理",
-            description: `${name} 的訂單操作: ${typeMap[type] || type}`,
-            open: true,
+      try {
+        channel.subscribe((status: any) => {
+          console.log('reels-order-listener subscribe callback', status);
         });
-    }
-  };
+      } catch (err) {
+        console.error('reels-order-listener subscribe error', err);
+      }
 
-  const toggleExpand = useCallback((sku: string) => {
-    setSelectedSku(sku);
-    setModalOpen(true);
-  }, []);
-
-  const collapseAll = () => {
-    // close modal / deselect SKU
-    setModalOpen(false);
-    setSelectedSku(null);
-  };
-
-  // Live notification listener
-  useEffect(() => {
-    const channel = supabase
-      .channel('reels_orders_realtime')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'reels_orders' },
-        async (payload) => {
-          // 1. Play Sound
-          if (audioEnabled && audioRef.current) {
-             audioRef.current.currentTime = 0;
-             audioRef.current.play().catch(e => console.error("Audio play failed", e));
-          }
-
-          const partialData = payload.new;
-          
-          // 2. Fetch full data to ensure we have joined tables (SKU_details etc)
-          let newReg: Registration;
-          const { data: fullData } = await supabase
-            .from('reels_orders')
-            .select(`
-                *,
-                price,
-                SKU_details (
-                    regular_price,
-                    SKU_date,
-                    reels_deadline,
-                    SKU_images (
-                        imageurl,
-                        imageIndex
-                    )
-                )
-            `)
-            .eq('id', partialData.id)
-            .single();
-            
-          if (fullData) {
-              newReg = mapSupabaseOrderToRegistration(fullData);
-          } else {
-             // Fallback
-             newReg = mapSupabaseOrderToRegistration(partialData);
-          }
-
-           // 3. Show Toast
-           const sku = newReg.sku || '未知商品';
-           const cust = newReg.customerName || '顧客';
-
-           pushToast({
-             title: `🔥 來自${cust}的新訂單`,
-             description: `${sku} - ${newReg.variation ?? ''}`,
-             duration: Infinity, 
-             action: (
-               <ToastAction altText="View" onClick={() => toggleExpand(sku)}>
-                 查看
-               </ToastAction>
-             )
-          });
-
-          // 4. Update State
-          setRegistrations((prev) => {
-             // Avoid duplicates if multiple inserts happen quickly or optimistic updates clash
-             if (prev.find(p => p.id === newReg.id)) return prev;
-             return [newReg, ...prev];
-          });
+      return () => {
+        try {
+          channel.unsubscribe();
+          console.log('reels-order-listener unsubscribed');
+        } catch (err) {
+          console.warn('failed to unsubscribe reels-order-listener', err);
         }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [audioEnabled, pushToast, toggleExpand]);
+      };
+    } catch (err) {
+      console.error('failed to setup reels_order subscription', err);
+    }
+  }, []);
 
   return (
-    <div className="min-h-screen bg-gray-50/50 text-[#111827]">
-      {/* Header */}
-          <header className="sticky top-0 z-50 bg-white border-b border-gray-200 px-4 py-3 md:px-6 md:py-4">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-         
-          <nav className="inline-flex gap-1 md:gap-2 bg-gray-50 p-1 rounded-lg border border-gray-200 w-full md:w-auto">
-            <Link href="/admin/orders" className="flex-1 md:flex-initial px-2 md:px-4 py-2 md:py-2 rounded text-xs md:text-sm font-medium bg-[#C4A59D] text-white text-center md:text-left hover:bg-[#C4A59D]/90 transition-colors">處理訂單</Link>
-            <Link href="/admin/upload" className="flex-1 md:flex-initial px-2 md:px-4 py-2 md:py-2 rounded text-xs md:text-sm text-[#111827] text-center md:text-left hover:bg-white/50 transition-colors">上傳 SKU</Link>
-            <Link href="/admin/skus" className="flex-1 md:flex-initial px-2 md:px-4 py-2 md:py-2 rounded text-xs md:text-sm text-[#111827] text-center md:text-left hover:bg-white/50 transition-colors">管理 SKUs</Link>
-            <Link href="/admin/best-sellers" className="flex-1 md:flex-initial px-2 md:px-4 py-2 md:py-2 rounded text-xs md:text-sm text-[#111827] text-center md:text-left hover:bg-white/50 transition-colors">熱賣 SKU</Link>
-          </nav>
-          
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setShowAudioConsent(true)}
-            className="hidden md:flex text-gray-500 hover:text-gray-900 ml-4"
-            title={audioEnabled ? "音效已開啟" : "音效已關閉"}
-          >
-            {audioEnabled ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
+    <div className="h-screen bg-white text-[#111827] overflow-auto flex flex-col p-4 pt-16 pb-28 max-w-[1000px] mx-auto">
+            <div className="mb-4">
+        <HeaderTabMenu active="orders" />
+      </div>
+      
+      <div className="flex justify-end">
+        <Link href="/admin/orders/restock">
+          <Button className="px-3 py-1 bg-primary text-white hover:bg-primary/90 focus-visible:ring-0">
+            切換補貨管理頁
           </Button>
-        </div>
-      </header>
+        </Link>
+      </div>
 
-      <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-6 pb-24">
 
-        <Card>
-          <CardHeader className="pb-3 md:pb-4">
-            <CardTitle className="text-base md:text-lg mb-4">篩選/檢索</CardTitle>
-            <div className="space-y-3 md:space-y-4">
-              {/* View Tabs */}
-              <div className="bg-gray-50 p-1 rounded-lg border border-gray-200 flex gap-1">
-                <Button 
-                  variant="ghost" 
-                  onClick={() => setView("action_needed")} 
-                  className={`flex-1 text-xs md:text-sm h-9 relative ${view === 'action_needed' ? 'bg-white text-blue-600 shadow-sm border border-gray-200 font-bold' : 'text-gray-500 hover:text-blue-600'}`}
-                >
-                  待處理
-                  {counts.action_needed > 0 && (
-                    <span className="ml-1.5 min-w-[1.25rem] h-5 px-1 rounded-full bg-blue-100 text-blue-700 text-[10px] flex items-center justify-center font-bold">
-                      {counts.action_needed}
-                    </span>
-                  )}
-                </Button>
 
-                <Button 
-                  variant="ghost" 
-                  onClick={() => setView("completed")} 
-                  className={`flex-1 text-xs md:text-sm h-9 relative ${view === 'completed' ? 'bg-white text-green-600 shadow-sm border border-gray-200 font-bold' : 'text-gray-500 hover:text-green-600'}`}
-                >
-                  已完成
-                </Button>
+      <div className="mt-8 ">
+        <h2 className="text-md font-bold mb-2">目前有 {countMeta?.total_results ?? (countLoading ? '載入中…' : '0')} 筆訂單需要處理</h2>
 
-                <Button 
-                  variant={view === "all" ? "default" : "ghost"} 
-                  onClick={() => setView("all")} 
-                  className={`flex-1 text-xs md:text-sm h-9 ${view === 'all' ? 'bg-white text-gray-900 shadow-sm border border-gray-200 hover:bg-gray-50' : 'text-gray-500'}`}
-                >
-                  全部
-                </Button>
-              </div>
-              
-              {/* Search and Controls */}
-              <div className="space-y-3 md:space-y-0 md:flex md:items-center md:gap-3">
-                <div className="flex-1">
-                  <Input placeholder="搜尋 SKU / 顧客 / 訂單號" value={searchSku} onChange={(e) => setSearchSku((e.target as HTMLInputElement).value)} className="text-sm" />
-                </div>
-                <div className="flex gap-2">
+        {/* Waitlist summary (flexible: supports numeric or object-shaped statusCounts entries) */}
+        {(() => {
+          const w = statusCounts?.waitlist ?? null;
+          if (w == null) return null;
+          const format = (v: any) => {
+            if (v == null) return null;
+            if (typeof v === 'number') {
+              if (v === 0) return null;
+              return `${v} 筆候補中訂單`;
+            }
+            if (typeof v === 'object') {
+              const possible = v.total ?? v.amount ?? v.order_total ?? v.order_total_amount ?? v.orders ?? v.items ?? null;
+              if (typeof possible === 'number') {
+                if (possible === 0) return null;
+                if ('total' in v || 'amount' in v || 'order_total' in v || 'order_total_amount' in v) return `待補貨總額: HK$${possible.toLocaleString()}`;
+                return `${possible} 筆候補中訂單`;
+              }
+              return null;
+            }
+            return String(v);
+          };
+          const txt = format(w);
+          return txt ? <div className="text-sm text-gray-600 mb-4">{txt}</div> : null;
+        })()}
+
+        <Chips statusCounts={statusCounts} onOpenCustomer={(id: string, status?: string) => { setModalCustomerId(id); setModalPriorityStatus(status ?? null); setModalOpen(true); }} onOpenBatch={(keys: string[], custIds: string[], status: string | 'all') => {
+          setBatchModalSelectedOrderKeys(keys)
+          setBatchModalCustomerIds(custIds)
+          setBatchModalStatusFilter(status)
+          setBatchModalOpenTop(true)
+        }} />
+      </div>
+      <OrderDetailsModalAll open={modalOpen} onOpenChange={(v: boolean) => { setModalOpen(v); if (!v) { setModalCustomerId(null); setModalPriorityStatus(null); } }} customerId={modalCustomerId} priorityStatus={modalPriorityStatus} />
+
+      <BatchConfirmModal
+        open={batchModalOpenTop && batchModalStatusFilter === 'allocated'}
+        onOpenChange={(v) => {
+          setBatchModalOpenTop(v)
+          if (!v) {
+            setBatchModalSelectedOrderKeys([])
+            setBatchModalCustomerIds([])
+            setBatchModalStatusFilter('all')
+          }
+        }}
+        selectedOrderKeys={batchModalSelectedOrderKeys}
+        customerIds={batchModalCustomerIds}
+        statusFilter={batchModalStatusFilter}
+        onConfirm={(selected) => { console.log('confirmed batch for', selected); setBatchModalSelectedOrderKeys([]); setBatchModalCustomerIds([]); setBatchModalOpenTop(false); }}
+      />
+
+      <BatchPackingModal
+        open={batchModalOpenTop && batchModalStatusFilter === 'verified'}
+        onOpenChange={(v) => {
+          setBatchModalOpenTop(v)
+          if (!v) {
+            setBatchModalSelectedOrderKeys([])
+            setBatchModalCustomerIds([])
+            setBatchModalStatusFilter('all')
+          }
+        }}
+        selectedOrderKeys={batchModalSelectedOrderKeys}
+        customerIds={batchModalCustomerIds}
+        statusFilter={batchModalStatusFilter}
+        onConfirm={(selected) => { console.log('packed batch for', selected); setBatchModalSelectedOrderKeys([]); setBatchModalCustomerIds([]); setBatchModalOpenTop(false); }}
+      />
+
+      <BatchPaymentReminderModal
+        open={batchModalOpenTop && batchModalStatusFilter === 'confirmed'}
+        onOpenChange={(v) => {
+          setBatchModalOpenTop(v)
+          if (!v) {
+            setBatchModalSelectedOrderKeys([])
+            setBatchModalCustomerIds([])
+            setBatchModalStatusFilter('all')
+          }
+        }}
+        selectedOrderKeys={batchModalSelectedOrderKeys}
+        customerIds={batchModalCustomerIds}
+        statusFilter={batchModalStatusFilter}
+        onConfirm={(selected) => { console.log('sent reminders for', selected); setBatchModalSelectedOrderKeys([]); setBatchModalCustomerIds([]); setBatchModalOpenTop(false); }}
+      />
+
+      <BatchVerifiedModal
+        open={batchModalOpenTop && batchModalStatusFilter === 'paid'}
+        onOpenChange={(v) => {
+          setBatchModalOpenTop(v)
+          if (!v) {
+            setBatchModalSelectedOrderKeys([])
+            setBatchModalCustomerIds([])
+            setBatchModalStatusFilter('all')
+          }
+        }}
+        selectedOrderKeys={batchModalSelectedOrderKeys}
+        customerIds={batchModalCustomerIds}
+        statusFilter={batchModalStatusFilter}
+        onConfirm={(selected) => { console.log('verified batch for', selected); setBatchModalSelectedOrderKeys([]); setBatchModalCustomerIds([]); setBatchModalOpenTop(false); }}
+      />
+
+      <BatchShippingModal
+        open={batchModalOpenTop && batchModalStatusFilter === 'pending_to_ship'}
+        onOpenChange={(v) => {
+          setBatchModalOpenTop(v)
+          if (!v) {
+            setBatchModalSelectedOrderKeys([])
+            setBatchModalCustomerIds([])
+            setBatchModalStatusFilter('all')
+          }
+        }}
+        selectedOrderKeys={batchModalSelectedOrderKeys}
+        customerIds={batchModalCustomerIds}
+        statusFilter={batchModalStatusFilter}
+        onConfirm={(selected) => { console.log('shipped batch for', selected); setBatchModalSelectedOrderKeys([]); setBatchModalCustomerIds([]); setBatchModalOpenTop(false); }}
+      />
+    </div>
+  );
+}
+
+function Chips({ statusCounts, onOpenCustomer, onOpenBatch }: { statusCounts?: Record<string, number> | null; onOpenCustomer: (id: string, status?: string) => void; onOpenBatch?: (keys: string[], custIds: string[], status: string | 'all') => void }) {
+  const [selected, setSelected] = useState<string | 'all'>('confirmed');
+  const [loading, setLoading] = useState(false);
+  const [results, setResults] = useState<any[] | null>(null);
+  const [page, setPage] = useState<number>(1);
+  const [perPage, setPerPage] = useState<number>(20);
+
+  const chips = [
+    // 'waitlist' chip hidden per request
+    { key: 'allocated', label: '待通知', count: statusCounts?.allocated },
+    { key: 'confirmed', label: '待付款', count: statusCounts?.confirmed },
+    { key: 'paid', label: '待核數', count: statusCounts?.paid },
+    { key: 'verified', label: '待執貨', count: statusCounts?.verified },
+    { key: 'pending_to_ship', label: '待寄貨', count: statusCounts?.pending_to_ship },
+  ];
+
+  return (
+    <div className="flex flex-col gap-4 mt-4">
+      <div className="flex flex-wrap gap-3 items-center">
+      {chips.map((c) => {
+        const active = selected === c.key;
+        const count = c.count;
+        const display = typeof count === 'number' ? count : '-';
+        return (
+          <button
+            key={c.key}
+            onClick={() => setSelected(c.key)}
+            className={`relative px-4 py-2 rounded-full text-sm font-medium flex items-center gap-2 overflow-visible ${active ? 'bg-primary text-white' : 'bg-gray-100 text-gray-700'}`}
+          >
+            <span>{c.label}</span>
+            {typeof count === 'number' && count > 0 && (
+              <Badge className={`absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center text-xs p-0 shadow ${active ? 'bg-red-600 text-white' : 'bg-red-600 text-white'}`}>{display}</Badge>
+            )}
+          </button>
+        );
+      })}
+
+      
+      </div>
+
+      <CustomerList
+        statusFilter={selected}
+        page={page}
+        perPage={perPage}
+        onPageChange={setPage}
+        onOpenCustomer={(id: string) => onOpenCustomer(id, selected)}
+        onOpenBatch={onOpenBatch}
+      />
+    </div>
+  );
+}
+
+// fetch when selected/page/perPage change
+function useFetchOrders(statusFilter: string | 'all', page: number, perPage: number, urgentOnly: boolean = false) {
+  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState<any[] | null>(null);
+  const [meta, setMeta] = useState<any | null>(null);
+  const [statusCounts, setStatusCounts] = useState<Record<string, number> | null>(null);
+  const mountedRef = useRef(true);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      try {
+        // Special-case: when requesting 'verified' view, also include items
+        // with status 'pre_pending_to_ship' so they appear under the
+        // `待執貨` chip. We fetch both and merge by customer.
+        if (statusFilter === 'verified') {
+          const [a, b] = await Promise.all([
+            getMasterOrderList('verified', page, perPage, urgentOnly),
+            getMasterOrderList('pre_pending_to_ship', page, perPage, urgentOnly),
+          ]);
+
+          // merge rows by customer identifier (customer_id preferred)
+          const map: Record<string, any> = {};
+          const addRows = (rowsArr: any[]) => {
+            (rowsArr || []).forEach((c: any) => {
+              const key = c.customer_id ?? c.phone ?? c.customer_name ?? Math.random().toString(36).slice(2, 9);
+              if (!map[key]) map[key] = { ...c, orders: Array.isArray(c.orders) ? [...c.orders] : [] };
+              else map[key].orders = (map[key].orders || []).concat(Array.isArray(c.orders) ? c.orders : []);
+              // recompute matching_order_count if present
+              map[key].matching_order_count = (map[key].matching_order_count || 0) + (c.matching_order_count || (c.orders ? c.orders.length : 0));
+            });
+          };
+
+          addRows(a.rows || []);
+          addRows(b.rows || []);
+
+          const mergedRows = Object.values(map).map((r: any) => ({ ...r }));
+
+          const mergedMeta = {
+            current_page: a.metadata?.current_page ?? page,
+            per_page: a.metadata?.per_page ?? perPage,
+            total_pages: a.metadata && b.metadata ? Math.max(a.metadata.total_pages ?? 1, b.metadata.total_pages ?? 1) : a.metadata?.total_pages ?? b.metadata?.total_pages ?? 1,
+            total_results: (a.metadata?.total_results ?? (a.rows ? a.rows.length : 0)) + (b.metadata?.total_results ?? (b.rows ? b.rows.length : 0)),
+          };
+
+          const mergedStatusCounts: Record<string, number> = {};
+          [a.statusCounts, b.statusCounts].forEach((sc) => {
+            if (!sc) return;
+            Object.entries(sc).forEach(([k, v]) => {
+              const n = typeof v === 'number' ? v : ((v as any)?.orders ?? (v as any)?.items ?? 0);
+              mergedStatusCounts[k] = (mergedStatusCounts[k] || 0) + (n || 0);
+            });
+          });
+
+          if (mountedRef.current) {
+            setData(mergedRows);
+            setMeta(mergedMeta);
+            if (Object.keys(mergedStatusCounts).length) setStatusCounts(mergedStatusCounts);
+          }
+        } else {
+          const resp = await getMasterOrderList(statusFilter === 'all' ? 'all' : statusFilter, page, perPage, urgentOnly);
+          if (mountedRef.current) {
+            setData(resp.rows);
+            setMeta(resp.metadata);
+            if (resp.statusCounts) setStatusCounts(resp.statusCounts);
+          }
+        }
+      } catch (err) {
+        console.error('fetch get_master_order_list', err);
+        if (mountedRef.current) {
+          setData([]);
+          setMeta(null);
+        }
+      }
+    } catch (err) {
+      console.error('fetch get_master_order_list', err);
+      if (mountedRef.current) {
+        setData([]);
+        setMeta(null);
+      }
+    } finally {
+      if (mountedRef.current) setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    mountedRef.current = true;
+    fetchData();
+    return () => { mountedRef.current = false; };
+  }, [statusFilter, page, perPage, urgentOnly]);
+
+  useEffect(() => {
+    // Debounce rapid realtime events to avoid spamming RPC calls which can
+    // cause UI flicker (modal unmount/remount or content reloading).
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const handler = (ev: Event) => {
+      // If multiple events arrive quickly, wait 700ms after the last one.
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        fetchData();
+        timer = null;
+      }, 700);
+    };
+
+    window.addEventListener('orders:refresh', handler as EventListener);
+    return () => {
+      if (timer) clearTimeout(timer);
+      window.removeEventListener('orders:refresh', handler as EventListener);
+    };
+  }, [statusFilter, page, perPage, urgentOnly]);
+
+  return { loading, data, meta, statusCounts };
+}
+
+function CustomerList({ statusFilter, page, perPage, onPageChange, onOpenCustomer, onOpenBatch }: { statusFilter: string | 'all'; page: number; perPage: number; onPageChange: (p: number) => void; onOpenCustomer: (id: string) => void; onOpenBatch?: (keys: string[], custIds: string[], status: string | 'all') => void }) {
+  console.log('CustomerList render', { statusFilter, page, perPage })
+  const [showUnder4Only, setShowUnder4Only] = useState<boolean>(false);
+  const { loading, data, meta } = useFetchOrders(statusFilter, page, perPage, showUnder4Only);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [selectedOrders, setSelectedOrders] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    // collapse all customer items when filter or pagination changes
+    setExpanded({});
+    // clear any selected checkboxes when the view (choice chip) changes
+    setSelectedOrders({});
+  }, [statusFilter, page, perPage]);
+
+  const toggle = (id: string) => {
+    setExpanded((s) => ({ ...s, [id]: !s[id] }));
+  };
+
+  const toggleOrderSelection = (orderKey: string) => {
+    setSelectedOrders((s) => ({ ...s, [orderKey]: !s[orderKey] }));
+  };
+
+  const [batchModalOpen, setBatchModalOpen] = useState<boolean>(() => {
+    try {
+      return typeof window !== 'undefined' && !!(window as any).__isBatchModalOpen
+    } catch (e) {
+      return false
+    }
+  });
+
+  const toggleCustomerSelection = (cust: any) => {
+    const keys: string[] = (cust.orders || []).map((o: any, idx: number) => o.order_number || `${cust.customer_id}_${idx}`);
+    const allSelected = keys.length > 0 && keys.every((k) => !!selectedOrders[k]);
+    const newVal = !allSelected;
+    setSelectedOrders((s) => {
+      const copy = { ...s };
+      keys.forEach((k) => { copy[k] = newVal; });
+      return copy;
+    });
+  };
+
+  const handleCustomerAction = (cust: any) => {
+    const keys: string[] = (cust.orders || []).map((o: any, idx: number) => o.order_number || `${cust.customer_id}_${idx}`);
+    const selected = keys.filter((k) => !!selectedOrders[k]);
+    if (statusFilter === 'allocated') {
+      // ensure this customer's orders are selected (if none selected), then open batch modal
+      if (selected.length === 0) {
+        setSelectedOrders((s) => {
+          const copy = { ...s };
+          keys.forEach((k) => { copy[k] = true; });
+          return copy;
+        });
+      }
+      if (onOpenBatch) onOpenBatch(Object.keys(selectedOrders).filter((k) => !!selectedOrders[k]).length ? Object.keys(selectedOrders).filter((k) => !!selectedOrders[k]) : keys, [cust.customer_id], statusFilter)
+      return;
+    }
+    // If status is 'paid' (核對數紙), open the verified batch modal for this customer
+    if (statusFilter === 'paid') {
+      if (selected.length === 0) {
+        setSelectedOrders((s) => {
+          const copy = { ...s };
+          keys.forEach((k) => { copy[k] = true; });
+          return copy;
+        });
+      }
+      if (onOpenBatch) onOpenBatch(Object.keys(selectedOrders).filter((k) => !!selectedOrders[k]).length ? Object.keys(selectedOrders).filter((k) => !!selectedOrders[k]) : keys, [cust.customer_id], statusFilter)
+      return;
+    }
+    // If status is 'verified' (打包執貨), open the packing modal for this customer
+    if (statusFilter === 'verified') {
+      if (selected.length === 0) {
+        setSelectedOrders((s) => {
+          const copy = { ...s };
+          keys.forEach((k) => { copy[k] = true; });
+          return copy;
+        });
+      }
+      if (onOpenBatch) onOpenBatch(Object.keys(selectedOrders).filter((k) => !!selectedOrders[k]).length ? Object.keys(selectedOrders).filter((k) => !!selectedOrders[k]) : keys, [cust.customer_id], statusFilter)
+      return;
+    }
+    // If status is 'pending_to_ship' (完成寄貨), open the shipping modal for this customer
+    if (statusFilter === 'pending_to_ship') {
+      if (selected.length === 0) {
+        setSelectedOrders((s) => {
+          const copy = { ...s };
+          keys.forEach((k) => { copy[k] = true; });
+          return copy;
+        });
+      }
+      if (onOpenBatch) onOpenBatch(Object.keys(selectedOrders).filter((k) => !!selectedOrders[k]).length ? Object.keys(selectedOrders).filter((k) => !!selectedOrders[k]) : keys, [cust.customer_id], statusFilter)
+      return;
+    }
+    // 如果是「待付款」(confirmed)，則直接開啟 WhatsApp 並帶入預設訊息
+    if (statusFilter === 'confirmed') {
+      try {
+        const name = cust.customer_name ?? '客戶'
+        const phoneRaw = (cust.phone || '')
+        const phone = phoneRaw.replace(/[^0-9+]/g, '')
+        const orderNumbers = (cust.orders || []).map((o: any) => o.order_number).filter(Boolean).join(', ') || '—'
+        const numOrders = (cust.orders || []).length
+        const total = ((cust.orders || []).reduce((sum: number, o: any) => {
+          const v = Number(o.order_total ?? o.order_total_amount ?? o.total ?? 0) || 0
+          return sum + v
+        }, 0)).toLocaleString()
+
+        // compute earliest payment deadline across this customer's orders (check item-level deadlines)
+        const paymentDeadlines = (cust.orders || []).flatMap((o: any) => (o.items || []).map((it: any) => it.payment_deadline || it.deadline).filter(Boolean))
+        let formattedDeadline = null
+        let hoursRemainingText = null
+        if (paymentDeadlines.length > 0) {
+          const parsed = paymentDeadlines.map((d: string) => Date.parse(d)).filter((t: number) => !isNaN(t))
+          if (parsed.length > 0) {
+            const earliest = Math.min(...parsed)
+            formattedDeadline = new Date(earliest).toLocaleString()
+            const hoursRemaining = Math.max(0, Math.ceil((earliest - Date.now()) / (1000 * 60 * 60)))
+            hoursRemainingText = `${hoursRemaining}`
+          }
+        }
+        const deadlineText = formattedDeadline && hoursRemainingText ? `還有 ${hoursRemainingText} 小時（截止： ${formattedDeadline}）` : `請於12小時內完成`
+
+        // build exact requested template for single-customer quick message
+        const hoursText = hoursRemainingText ?? '12'
+        const txs = Array.from(new Set((cust.orders || []).map((o: any) => o.transaction_id).filter(Boolean)));
+        const payPath = txs.length > 0 ? `/pay/${txs[0]}` : null
+        const payUrl = (payPath && typeof window !== 'undefined') ? `${window.location.origin}${payPath}` : ''
+        const baseMsg = `嗨 ${name} 👋\n\n你嘅訂單 ${orderNumbers}（共 ${numOrders} 張），總金額 HK$${total}。\n\n`
+        let finalMsg = `${baseMsg}`
+
+        finalMsg += `我們已為你準備付款連結：${payUrl}\n\n`
+        finalMsg += `請於${hoursText} 小時內點擊以上連結付款。\n\n`
+        finalMsg += `限時過後仍未收到付款系統自動取消並當棄單。\n如有查詢，請直接回覆此訊息。\n\n多謝你！🙏\n\n`
+
+        if (txs.length > 0) {
+          finalMsg += `交易編號: ${txs.join(', ')}\n\n`
+        }
+
+        if (formattedDeadline) {
+          finalMsg += `截止時間： ${new Date(Math.min(...(paymentDeadlines.map((d: string) => Date.parse(d)).filter((t: number) => !isNaN(t))))) .toLocaleString('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
+        }
+
+        if (phone && typeof window !== 'undefined') {
+          const url = `https://wa.me/${phone.replace(/^\+/, '')}?text=${encodeURIComponent(finalMsg)}`
+          window.open(url, '_blank')
+        } else {
+          console.warn('No phone available to send WhatsApp message for customer', cust)
+        }
+      } catch (e) {
+        console.error('Failed to open WhatsApp reminder', e)
+      }
+      return
+    }
+    console.log('customer action for', cust.customer_id, 'selected orders:', selected);
+  };
+
+  const actionLabel = (() => {
+    const map: Record<string, string | null> = {
+      waitlist: null,
+      allocated: '發送付款通知',
+      confirmed: '發送付款提醒',
+      paid: '核對數紙',
+      verified: '打包執貨',
+      pending_to_ship: '完成寄貨',
+    };
+    return map[statusFilter] ?? null;
+  })();
+
+  const anySelected = Object.values(selectedOrders).some((v) => !!v);
+
+  const handleBulkAction = () => {
+    const selected = Object.keys(selectedOrders).filter((k) => !!selectedOrders[k]);
+    if (statusFilter === 'allocated' || statusFilter === 'confirmed' || statusFilter === 'paid' || statusFilter === 'verified' || statusFilter === 'pending_to_ship') {
+      // open batch modal for allocated (confirm), confirmed (payment reminder), or paid (verify)
+      if (onOpenBatch) onOpenBatch(selected.length ? selected : selected, customerIdsForModal, statusFilter)
+      return;
+    }
+    console.log('bulk action', actionLabel, selected);
+  };
+
+  // ListStatusLabel and ListStatusBg are imported from lib/orderStatus
+
+  const rows = Array.isArray(data) ? data : [];
+
+  const getEarliestDeadlineTs = (cust: any): number | null => {
+    const paymentDeadlines = (cust.orders || []).map((o: any) => o.payment_deadline || o.deadline).filter(Boolean);
+    if (paymentDeadlines.length === 0) return null;
+    const parsed = paymentDeadlines.map((d: string) => {
+      const t = Date.parse(d);
+      return isNaN(t) ? null : t;
+    }).filter((v: number | null) => v !== null) as number[];
+    if (parsed.length === 0) return null;
+    return Math.min(...parsed);
+  };
+
+  const filteredRows = rows;
+
+  if (loading) return <div className="text-sm text-gray-500 mt-4">載入中…</div>;
+
+  const selectedOrderKeysList = Object.keys(selectedOrders).filter((k) => !!selectedOrders[k]);
+  const customerIdsForModal = rows
+    .filter((cust: any) => (cust.orders || []).some((o: any) => selectedOrderKeysList.includes(o.order_number)))
+    .map((c: any) => c.customer_id)
+    .filter(Boolean);
+
+  // Do not early-return when there are no rows so the header and
+  // controls (e.g. urgent toggle) remain visible. Show a placeholder
+  // inside the list area instead.
+
+  return (
+    <div className="space-y-4 pt-4">
+     
+     
+      <div className="flex-col text-xs items-start gap-4">
+         
+      {statusFilter === 'confirmed' && (
+        <button
+          onClick={(e) => { e.stopPropagation(); setShowUnder4Only((s) => !s); }}
+          className={`px-3 py-1 rounded-full text-xs ${showUnder4Only ? 'bg-primary text-white' : 'bg-gray-100 text-gray-700'}`}
+        >
+          顯示付款期限小於4小時的訂單
+        </button>
+      )}
+      <div className="flex items-jusified-between mt-4 px-2">
+      {(Number(meta?.total_results) > 1) && (
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          // gather all order keys visible in the list
+          const allKeys: string[] = filteredRows.flatMap((cust: any) => (cust.orders || []).map((o: any, idx: number) => o.order_number || `${cust.customer_id}_${idx}`));
+          const allSelected = allKeys.length > 0 && allKeys.every((k) => !!selectedOrders[k]);
+          if (allSelected) {
+            // deselect all
+            setSelectedOrders({});
+          } else {
+            const newSel: Record<string, boolean> = {};
+            allKeys.forEach((k) => { newSel[k] = true; });
+            setSelectedOrders(newSel);
+          }
+        }}
+        className="text-sm text-gray-700"
+      >
+        全部選取
+      </button>
+      )}
+      <div className="ml-auto text-gray-700">{meta?.total_results} 筆訂單</div>
+      </div>
+      </div>
+
+
+      {/* list */}
+      <List className="space-y-4">
+        {filteredRows.length === 0 ? (
+          <EmptyWidget className="mt-4" />
+        ) : filteredRows.map((cust: any) => {
+          const id = cust.customer_id || cust.phone || Math.random().toString(36).slice(2, 9);
+          const isOpen = !!expanded[id];
+          // compute closest (earliest) payment deadline across this customer's orders
+          const paymentDeadlines = (cust.orders || []).map((o: any) => o.payment_deadline || o.deadline).filter(Boolean);
+          let deadlineLabel: string | null = null;
+          let formattedDeadlineStr: string | null = null;
+          if (paymentDeadlines.length > 0) {
+            try {
+              const parsed = paymentDeadlines.map((d: string) => {
+                const t = Date.parse(d);
+                return isNaN(t) ? null : t;
+              }).filter((v: number | null) => v !== null) as number[];
+              if (parsed.length > 0) {
+                const earliestTs = Math.min(...parsed);
+                const now = Date.now();
+                const hoursRemaining = (earliestTs - now) / (1000 * 60 * 60);
+                if (hoursRemaining > 0) {
+                  if (hoursRemaining <= 4) deadlineLabel = '<4 小時';
+                  else if (hoursRemaining <= 12) deadlineLabel = '<12 小時';
+                  else deadlineLabel = '>12 小時';
+                }
+                formattedDeadlineStr = new Date(earliestTs).toLocaleString();
+              }
+            } catch (e) {
+              deadlineLabel = null;
+              formattedDeadlineStr = null;
+            }
+          }
+
+          const header = (
+            <>
+              <div>
+                <div className="text-md font-bold">{cust.customer_name || '—'} | {cust.phone}</div>
+                <div className="text-xs text-gray-500">
                  
+                  {((cust.matching_action_count ?? null) !== null) && (
+                    <span className="ml-2">{cust.matching_action_count} 張訂單</span>
+                  )}
                 </div>
+                {statusFilter === 'confirmed' && (
+                  deadlineLabel && (
+                    <div className={`text-xs mt-2 rounded-full text-center p-1 ${deadlineLabel === '<4 小時' ? 'bg-red-600 text-white' : 'bg-primary text-white'}`}>{`付款限期: ${deadlineLabel}`}</div>
+                  )
+                )}
               </div>
-            </div>
-          </CardHeader>
-          <Toaster />
-          <CardContent className="pt-0">
-            {groups.length === 0 ? (
-              <div className="text-center py-8">
-                <div className="text-sm md:text-base text-[#6B7280]">目前沒有符合的訂單。</div>
-              </div>
-            ) : (
-              <div className="space-y-3 md:space-y-4">
-                {groups.map((g, idx) => {
-                  const firstItem = g.items[0];
-                  const previewImage = firstItem.imageUrl;
-                  const deadline = firstItem.reelsDeadline;
-                  
-                  // Stats
-                  const total = g.items.length;
-                  const verifying = g.items.filter(i => i.status === 'paid').length;
-                  const processingCount = g.items.filter(i => !['verified', 'completed', 'void', 'out-of-stock'].includes(i.status)).length;
-                  
-                  // Traffic Light Logic
-                  const isAllCompleted = g.items.every(i => 
-                    ['verified', 'completed', 'void', 'out-of-stock'].includes(i.status)
-                  );
-                  
-                  // Urgency Logic
-                  const now = new Date();
-                  const deadlineDate = deadline ? new Date(deadline) : null;
-                  const isDeadlinePassed = deadlineDate ? deadlineDate < now : false;
-                  const hoursLeft = deadlineDate ? (deadlineDate.getTime() - now.getTime()) / 3600000 : 0;
-                  
-                  // 1. Workflow Badge (Top Right)
-                  let workflowBadge = null;
-                  if (verifying > 0) {
-                     workflowBadge = (
-                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold border border-blue-200 shadow-sm whitespace-nowrap">
-                         待核數 {verifying}
-                       </span>
-                     );
-                  } else if (isAllCompleted) {
-                     workflowBadge = (
-                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-gray-50 text-gray-400 text-xs font-medium border border-gray-100 whitespace-nowrap">
-                         已完成
-                       </span>
-                     );
-                  }
+            </>
+          );
 
-                  // 2. Urgency Label (Always calculated)
-                  let urgencyLabel = null;
-                  if (isDeadlinePassed) {
-                      urgencyLabel = (
-                        <span className="text-red-600 text-[10px] md:text-xs font-bold whitespace-nowrap">
-                          🔴 已截單
-                        </span>
-                      );
-                  } else if (hoursLeft < 24 && deadlineDate) {
-                      urgencyLabel = (
-                        <span className="text-orange-600 text-[10px] md:text-xs font-bold whitespace-nowrap">
-                           🟠 剩餘 {Math.ceil(hoursLeft)} 小時
-                        </span>
-                      );
-                  } else {
-                      urgencyLabel = (
-                        <span className="text-green-600 text-[10px] md:text-xs font-bold whitespace-nowrap">
-                           🟢 進行中
-                        </span>
-                      );
-                  }
-
+          const left = (
+            <>
+              {statusFilter !== 'all' && (Number(meta?.total_results) > 1) && (
+                (() => {
+                  const keys: string[] = (cust.orders || []).map((o: any, idx: number) => o.order_number || `${cust.customer_id}_${idx}`);
+                  const allSelected = keys.length > 0 && keys.every((k) => !!selectedOrders[k]);
+                  const someSelected = keys.some((k) => !!selectedOrders[k]) && !allSelected;
                   return (
-                    <div 
-                      key={g.sku} 
-                      className="group relative bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer overflow-hidden flex items-center h-24"
-                      onClick={() => toggleExpand(g.sku)}
-                    >
-                        {/* Image */}
-                        <div 
-                          className="w-24 h-full bg-gray-100 relative overflow-hidden flex-shrink-0 border-r border-gray-100"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (previewImage) setFullscreenImage(previewImage);
-                          }}
-                        >
-                          {previewImage ? (
-                            <Image src={previewImage} alt={g.sku} fill className="object-cover object-top" priority={idx < 5} />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center text-xs text-gray-400">無圖片</div>
-                          )}
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onClick={(e) => { e.stopPropagation(); }}
+                      onChange={(e) => { e.stopPropagation(); toggleCustomerSelection(cust); }}
+                      ref={(el) => { if (el) el.indeterminate = someSelected; }}
+                      className="mr-2 h-5 w-5 accent-primary"
+                    />
+                  );
+                })()
+              )}
+            </>
+          );
+
+          const right = (
+            <>
+              {actionLabel && (
+                <Button className="px-2 py-1 text-xs" onClick={(e) => { e.stopPropagation(); handleCustomerAction(cust); }}>
+                  {actionLabel}
+                </Button>
+              )}
+              <button onClick={(e) => { e.stopPropagation(); toggle(id); }} className="text-xs ml-2">
+                {isOpen ? '▲' : '▼'}
+              </button>
+            </>
+          );
+
+          return (
+            <ListItem key={id} id={id} left={left} header={header} right={right} isOpen={isOpen} onToggle={() => toggle(id)}>
+              {['confirmed', 'paid', 'verified', 'pending_to_ship'].includes(String(statusFilter)) ? (
+                (() => {
+                  // group orders by transaction_id
+                  const groups: Record<string, any[]> = (cust.orders || []).reduce((acc: Record<string, any[]>, o: any) => {
+                    const tx = o.transaction_id ?? '未生成交易';
+                    if (!acc[tx]) acc[tx] = [];
+                    acc[tx].push(o);
+                    return acc;
+                  }, {});
+                  return Object.entries(groups).map(([tx, orders], idx2) => {
+                      const representative = orders[0] || {};
+                      const label = ListStatusLabel[representative.status] || representative.status || '狀態';
+                      const bg = ListStatusBg[representative.status] || 'bg-gray-100';
+                    return (
+                      <div key={tx + '_' + idx2} onClick={(e) => { e.stopPropagation(); if (cust.customer_id) onOpenCustomer(cust.customer_id); }} className={`flex items-center justify-between px-4 py-3 rounded-full ${bg} cursor-pointer hover:bg-gray-50`}>
+                        <div className="flex flex-col">
+                          <div className="text-xs text-gray-500">交易號碼</div>
+                          <div className="font-semibold">{tx}</div>
+                         
                         </div>
-                        
-                        {/* Info Section */}
-                        <div className="flex-1 min-w-0 px-3 py-2 self-center">
-                             <div className="flex flex-col gap-1">
-                                 {/* Top Row: SKU + Urgency | Workflow Badge */}
-                                 <div className="flex justify-between items-start gap-2">
-                                     <div className="flex flex-col gap-0.5 min-w-0">
-                                         <h3 className="text-base font-bold text-gray-900 leading-none truncate">
-                                            {firstItem.skuId ? (
-                                                <Link 
-                                                  href={`/product/${firstItem.skuId}`}  
-                                                  target="_blank"
-                                                  onClick={(e) => e.stopPropagation()} 
-                                                  className="hover:text-blue-600 transition-colors"
-                                                >
-                                                  {g.sku}
-                                                </Link>
-                                              ) : (
-                                                g.sku
-                                              )}
-                                              {/* Order Number on Card */}
-                                              {total === 1 && (
-                                                <span 
-                                                  className="ml-2 text-xs font-mono text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded cursor-copy hover:bg-gray-200 transition-colors"
-                                                  onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    navigator.clipboard.writeText(firstItem.orderNumber);
-                                                    pushToast({ description: "訂單號已複製" });
-                                                  }}
-                                                  title="點擊複製訂單號"
-                                                >
-                                                  #{firstItem.orderNumber}
-                                                </span>
-                                              )}
-                                         </h3>
-                                         {urgencyLabel && (
-                                            <div className="mt-0.5">
-                                                {urgencyLabel}
-                                            </div>
-                                         )}
-                                     </div>
-                                     <div className="flex-shrink-0">
-                                        {workflowBadge}
-                                     </div>
-                                 </div>
-                                 
-                                 <div className="flex items-center mt-1 gap-1.5">
-                                     <span className={`text-xs px-1.5 py-0.5 rounded font-bold ${processingCount > 0 ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
-                                        {processingCount > 0 ? `${processingCount} 待處理` : '全完成'}
-                                     </span>
-                                     <span className="text-gray-400 text-xs">/ 共{total}筆訂單</span>
-                                 </div>
-                             </div>
-                        </div>
+                        <div className="text-xs">{label}</div>
+                      </div>
+                    )
+                  })
+                })()
+              ) : (
+                (cust.orders || []).map((o: any, idx: number) => {
+                  const label = ListStatusLabel[o.status] || o.status || '狀態';
+                  const bg = ListStatusBg[o.status] || 'bg-gray-100';
+                  return (
+                    <div key={idx} onClick={(e) => { e.stopPropagation(); if (cust.customer_id) onOpenCustomer(cust.customer_id); }} className={`flex items-center justify-between px-4 py-3 rounded-full ${bg} cursor-pointer hover:bg-gray-50`}>
+                      <div className="flex flex-col">
+                        <div className="text-[9px] text-gray-500 mb-1">交易號碼</div>
+                        <div className="pl-2 text-sm text-black font-semibold">{o.order_number}</div>
+                      </div>
+                      <div className="text-sm">{label}</div>
                     </div>
                   );
-                })}
-              </div>
-            )}
-            
-             <div className="flex flex-col items-center gap-3 border-t border-gray-100 pt-4 mt-4">
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                  className="h-8 w-8 p-0"
-                >
-                  <ChevronLeftIcon className="h-4 w-4" />
-                </Button>
-                <div className="text-sm font-medium">
-                  {page} / {Math.max(1, Math.ceil(totalCount / ITEMS_PER_PAGE))}
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage((p) => p + 1)}
-                  disabled={page >= Math.ceil(totalCount / ITEMS_PER_PAGE)}
-                  className="h-8 w-8 p-0"
-                >
-                  <ChevronRightIcon className="h-4 w-4" />
-                </Button>
-              </div>
-             
-            </div>
-          </CardContent>
-        </Card>
-        <OrderModal
-          open={modalOpen}
-          onOpenChange={(o) => {
-            setModalOpen(o)
-            if (!o) collapseAll()
-          }}
-          sku={selectedSku ?? ''}
-          initialItems={groups.find((g) => g.sku === selectedSku)?.items ?? []}
-          product={findProductForSku(selectedSku ?? '')}
-          onAction={sendWhatsapp}
-          formatTime={formatTime}
-        />
+                })
+              )}
+            </ListItem>
+          );
+        })}
+      </List>
 
-        {/* Fullscreen Image Overlay */}
-        {fullscreenImage && (
-          <div 
-            className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
-            onClick={() => setFullscreenImage(null)}
+      {/* Bulk action button (appears when any checkbox selected) */}
+      {anySelected && actionLabel && (
+        <div className="fixed bottom-20 left-1/2 transform -translate-x-1/2 z-50">
+          <Button className="px-4 py-2 bg-primary text-white" onClick={(e) => { e.stopPropagation(); handleBulkAction(); }}>
+            批量{actionLabel}
+          </Button>
+        </div>
+      )}
+
+      {/* BatchConfirmModal moved to top-level OrdersPage to avoid remounts */}
+
+      {/* Pagination controls (fixed bottom-center, responsive) */}
+      {(Number(meta?.total_results) > 1) && (
+      <div className="fixed bottom-0 left-1/2 transform -translate-x-1/2 z-10 w-[90%] sm:w-auto max-w-[640px] pointer-events-none">
+        <div className="pointer-events-auto flex items-center justify-center gap-2 bg-white/90 backdrop-blur-sm  px-3 py-2  w-full">
+          <Button
+            variant="outline"
+            className="p-2 border-0"
+            disabled={meta ? meta.current_page <= 1 : page <= 1}
+            onClick={() => onPageChange(Math.max(1, page - 1))}
+            aria-label="上一頁"
           >
-            <div className="relative max-w-full max-h-full w-full h-full flex flex-col items-center justify-center">
-               <Button 
-                variant="ghost" 
-                size="icon" 
-                className="absolute top-4 right-4 text-white/70 hover:text-white hover:bg-white/20 z-10 rounded-full w-12 h-12"
-                onClick={() => setFullscreenImage(null)}
-              >
-                <XIcon className="w-8 h-8" />
-              </Button>
-              <div className="relative w-full h-full max-w-[90vw] max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
-                <Image 
-                  src={fullscreenImage} 
-                  alt="Full preview" 
-                  fill 
-                  className="object-contain" 
-                  priority
-                />
-              </div>
-            </div>
-          </div>
-        )}
+            <Lucide.ChevronLeft className="w-4 h-4" />
+          </Button>
 
-        <audio ref={audioRef} src={NOTIFICATION_SOUND} preload="auto" onError={(e) => console.error("Audio Load Error:", e.currentTarget.error)} />
+          <div className="px-2 text-sm text-gray-700">第 {meta?.current_page ?? page} / {meta?.total_pages ?? '-'} 頁</div>
 
-        <AlertDialog open={showAudioConsent} onOpenChange={setShowAudioConsent}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>啟用即時通知音效 (Enable Audio)</AlertDialogTitle>
-              <AlertDialogDescription>
-                系統需要您的許可才能在收到新訂單時播放提示音。
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => setAudioEnabled(false)}>保持靜音</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() => {
-                  if (audioRef.current) {
-                    audioRef.current.play().then(() => {
-                        audioRef.current?.pause();
-                        audioRef.current!.currentTime = 0;
-                    }).catch(console.error);
-                  }
-                  setAudioEnabled(true);
-                  setShowAudioConsent(false);
-                }}
-              >
-                開啟音效 (Enable)
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+          <Button
+            variant="outline"
+            className="p-2 border-0"
+            disabled={meta ? meta.current_page >= (meta.total_pages ?? 1) : false}
+            onClick={() => onPageChange(Math.min(meta?.total_pages ?? (page + 1), (meta?.current_page ?? page) + 1))}
+            aria-label="下一頁"
+          >
+            <Lucide.ChevronRight className="w-4 h-4" />
+          </Button>
+        </div>
       </div>
+      )}
     </div>
   );
 }
