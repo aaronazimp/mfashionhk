@@ -129,7 +129,7 @@ export default function OrdersPage() {
       <div className="mb-4 relative">
         <div className="w-full mt-0">
           <div className="mx-auto w-full max-w-[820px]">
-            <h2 className="text-md font-bold mb-2">目前有 {countMeta?.total_results ?? (countLoading ? '載入中…' : '0')} 筆訂單需要處理</h2>
+            <h2 className="text-sm font-bold mb-2">目前有 {countMeta?.total_results ?? (countLoading ? '載入中…' : '0')} 筆訂單需要處理</h2>
 
         {/* Waitlist summary (flexible: supports numeric or object-shaped statusCounts entries) */}
         {(() => {
@@ -139,21 +139,21 @@ export default function OrdersPage() {
             if (v == null) return null;
             if (typeof v === 'number') {
               if (v === 0) return null;
-              return `${v} 筆候補中訂單`;
+              return `包括 ${v} 筆候補中訂單`;
             }
             if (typeof v === 'object') {
               const possible = v.total ?? v.amount ?? v.order_total ?? v.order_total_amount ?? v.orders ?? v.items ?? null;
               if (typeof possible === 'number') {
                 if (possible === 0) return null;
                 if ('total' in v || 'amount' in v || 'order_total' in v || 'order_total_amount' in v) return `待補貨總額: HK$${possible.toLocaleString()}`;
-                return `${possible} 筆候補中訂單`;
+                return `包括 ${possible} 筆候補中訂單`;
               }
               return null;
             }
             return String(v);
           };
           const txt = format(w);
-          return txt ? <div className="text-sm text-gray-600 mb-4">{txt}</div> : null;
+          return txt ? <div className="text-xs text-gray-600 mb-4">{txt}</div> : null;
         })()}
 
         <Chips statusCounts={statusCounts} onOpenCustomer={(id: string, status?: string) => { setModalCustomerId(id); setModalPriorityStatus(status ?? null); setModalOpen(true); }} onOpenBatch={(keys: string[], custIds: string[], status: string | 'all') => {

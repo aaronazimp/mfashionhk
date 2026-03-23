@@ -332,8 +332,8 @@ export default function OrderDetailsModal({ open, onOpenChange, customerId, refe
         <div className="bg-white z-10 border-b border-gray-100 px-4 py-4 relative">
           <div className="flex flex-col items-start gap-1">
             <div className="min-w-0">
-              <div className="text-md font-bold">參考編號: {payload?.reference_id}</div>
-              <div className="text-md font-bold">顧客: {payload?.customer_info?.customer_name}</div>
+              <div className="text-sm font-bold mb-2">參考編號: {payload?.reference_id}</div>
+              <div className="text-sm font-bold">顧客: {payload?.customer_info?.customer_name}</div>
             </div>
             <div className="text-sm text-gray-700">聯絡電話: {payload?.customer_info?.phone}</div>
           </div>

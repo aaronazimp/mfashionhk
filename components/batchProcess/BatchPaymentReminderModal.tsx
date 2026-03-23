@@ -304,7 +304,7 @@ export default function BatchConfirmModal({
         onClick={() => onOpenChange(false)}
       />
 
-      <div className="relative w-[90vw] max-w-[400px] max-h-[90vh] bg-white rounded-3xl shadow-2xl overflow-auto">
+      <div className="relative w-[90vw] max-w-[400px] max-h-[85vh] bg-white rounded-3xl shadow-2xl overflow-auto">
        
 
         {/* Header */}

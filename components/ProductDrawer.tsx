@@ -269,19 +269,19 @@ export default function ProductDrawer({ id, open, onOpenChange }: Props) {
         <DrawerOverlay className="backdrop-blur-sm bg-black/30" />
         <DrawerContent className="touch-none items-start">
           <DrawerTitle className="sr-only">商品詳情</DrawerTitle>
-          <div className="flex flex-col w-[100%] h-full">
+          <div className="flex flex-col w-full h-auto">
             <div className="sticky top-0 z-20 bg-white/90 backdrop-blur-sm border-b">
               <div className="px-4 py-3 mt-4">
-                <div className="text-lg font-semibold">{product?.SKU || 'SKU NAME'}</div>
+                <div className="text-sm font-semibold">{product?.SKU || 'SKU NAME'}</div>
 
                 <div className="flex justify-between gap-3 mt-1">
-                  <div className="text-lg font-bold">${product?.regular_price ?? '0'}</div>
+                  <div className="text-md font-bold">${product?.regular_price ?? '0'}</div>
                   
-                  <div className="text-md text-zinc-500">🔥 99人已購買</div>
+                  <div className="text-sm text-zinc-500">🔥 99人已購買</div>
                 </div>
 
                 {(product?.reels_deadline || product?.deadline) && (
-                  <div className="flex items-right mt-2">
+                  <div className="flex items-right mt-2 text-sm">
                     截單時間: <CountdownTimer targetDate={new Date(product.reels_deadline || product.deadline)} size="sm" />
                   </div>
                 )}
@@ -348,7 +348,7 @@ export default function ProductDrawer({ id, open, onOpenChange }: Props) {
 
                     {/* Color chips */}
                     <div>
-                      <div className="text-sm text-zinc-500 mb-2">顏色</div>
+                      <div className="text-xs text-zinc-500 mb-2">顏色</div>
                       <div className="overflow-x-auto touch-auto pb-1">
                         <div className="inline-flex items-center gap-3 whitespace-nowrap">
                         {colorsToShow.map((color) => {
@@ -394,14 +394,14 @@ export default function ProductDrawer({ id, open, onOpenChange }: Props) {
             </div>
 
             {/* Expandable content: gallery + description */}
-            <div onScroll={onInnerScroll} className={`overflow-auto px-4 pt-2 pb-28 ${isExpanded ? 'h-[85vh]' : 'h-[calc(100%-350px)]'}`}>
+            <div onScroll={onInnerScroll} className={`overflow-auto px-4 pt-2 pb-16 ${isExpanded ? 'h-[85vh]' : 'h-auto'}`}>
               {loading ? (
                 <LoadingOverlay message="載入中…" />
               ) : (
                 <>
-                        {/* Thumbnails moved above variations */}
+                       
 
-                  {/* Gallery overlay moved to portal to avoid being clipped by drawer content */}
+                 
 
                   {/* Description (only when exists) */}
                   {(product?.video_caption || product?.remark) && (
@@ -416,14 +416,14 @@ export default function ProductDrawer({ id, open, onOpenChange }: Props) {
             </div>
 
             {/* Bottom fixed add-to-cart */}
-            <div className="fixed left-0 right-0 bottom-6 px-4 z-30">
+            <div className="fixed left-0 right-0 bottom-4 px-4 z-30">
               <div className="max-w-lg mx-auto">
                 <div className="flex justify-center">
                   <button
                     onClick={handleAddToCart}
                     disabled={buyDisabled}
                     aria-disabled={buyDisabled}
-                    className={`mx-auto w-64 rounded-2xl py-4 text-md ${buyDisabled ? 'bg-zinc-200 text-zinc-500 cursor-not-allowed' : 'bg-primary text-white'}`}
+                    className={`mx-auto w-48 rounded-xl py-3 text-sm ${buyDisabled ? 'bg-zinc-200 text-zinc-500 cursor-not-allowed' : 'bg-primary text-white'}`}
                   >
                     {isAddingToCart ? '加入中…' : '立即購買'}
                   </button>

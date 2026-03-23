@@ -553,7 +553,7 @@ export default function BatchConfirmModal({
         onClick={() => onOpenChange(false)}
       />
 
-      <div className="relative w-[90vw] max-w-[400px] max-h-[90vh] bg-white rounded-3xl shadow-2xl overflow-auto">
+      <div className="relative w-[90vw] max-w-[400px] max-h-[85vh] bg-white rounded-3xl shadow-2xl overflow-auto">
        
 
         {/* Header */}
@@ -737,7 +737,7 @@ export default function BatchConfirmModal({
                 <OrderCard
                   key={og.order_number ?? String(ogIdx)}
                   order={og}
-                  className="bg-white rounded-xl shadow max-h-[95vh] overflow-hidden"
+                  className="bg-white rounded-xl shadow max-h-[85vh] overflow-hidden"
                   onItemStatusChange={handleItemStatusChange}
                   overlays={overlaysByOrder[og.order_number ?? String(ogIdx)]}
                   onOverlaysChange={(ov) => setOverlaysByOrder((prev) => ({ ...prev, [og.order_number ?? String(ogIdx)]: { ...(prev[og.order_number ?? String(ogIdx)] || {}), ...ov } }))}
