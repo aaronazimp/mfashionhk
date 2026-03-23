@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import Image from "next/image";
+import ImageFullscreen from "./ImageFullscreen";
 import { SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { supabase } from "@/lib/supabase";
 import type { Product } from "@/lib/products";
@@ -42,6 +43,9 @@ export default function RestockSidebar({ product }: Props) {
   const [selectedOrder, setSelectedOrder] = useState<OrderItem | null>(null);
   const [orderModalOpen, setOrderModalOpen] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [fullscreenOpen, setFullscreenOpen] = useState(false);
+  const [fullscreenSrc, setFullscreenSrc] = useState<string | null>(null);
+  const [fullscreenAlt, setFullscreenAlt] = useState<string>("");
 
   useEffect(() => {
     if (!product) return;
@@ -105,7 +109,27 @@ export default function RestockSidebar({ product }: Props) {
     <div className="flex flex-col h-full bg-white min-w-0 box-border">
       <SheetHeader>
         <div className="flex flex-row items-start gap-6 pt-4">
-          <div className="w-36 h-56 rounded-lg overflow-hidden bg-gray-100 border border-gray-200 flex-shrink-0">
+          <div
+            className="w-36 h-56 rounded-lg overflow-hidden bg-gray-100 border border-gray-200 flex-shrink-0"
+            role={product ? "button" : undefined}
+            tabIndex={product ? 0 : undefined}
+            onClick={() => {
+              if (!product) return;
+              const src = product.images?.[0] || '/placeholder.svg';
+              setFullscreenSrc(src);
+              setFullscreenAlt(product.name || "");
+              setFullscreenOpen(true);
+            }}
+            onKeyDown={(e) => {
+              if (!product) return;
+              if (e.key === 'Enter') {
+                const src = product.images?.[0] || '/placeholder.svg';
+                setFullscreenSrc(src);
+                setFullscreenAlt(product.name || "");
+                setFullscreenOpen(true);
+              }
+            }}
+          >
             {product ? (
               <Image
                 src={product.images?.[0] || '/placeholder.svg'}
@@ -123,9 +147,9 @@ export default function RestockSidebar({ product }: Props) {
           <div className="flex-1">
             <div className="flex items-start justify-between">
               <div>
-                <SheetTitle className="text-lg font-bold">{product ? product.sku : "-"}</SheetTitle>
-                <div className="mt-2 text-sm text-gray-700">候補總數：</div>
-                <div className="text-md font-extrabold text-[#111] mt-1">{totalWaitlistCount} 件</div>
+                <SheetTitle className="text-md font-bold">{product ? product.sku : "-"}</SheetTitle>
+                <div className="mt-2 text-xs text-gray-700">候補總數：</div>
+                <div className="text-sm font-extrabold text-[#111] mt-1">{totalWaitlistCount} 件</div>
               </div>
             </div>
 
@@ -208,6 +232,13 @@ export default function RestockSidebar({ product }: Props) {
           fetchSkuRestockDetails();
         }}
         sku={String(product?.id ?? "")}
+      />
+
+      <ImageFullscreen
+        src={fullscreenSrc || ''}
+        alt={fullscreenAlt}
+        open={fullscreenOpen}
+        onClose={() => setFullscreenOpen(false)}
       />
     </div>
   );

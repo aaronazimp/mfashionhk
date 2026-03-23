@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dialog'
 import { CheckCircle2, ChevronDown } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { getPaymentPageData } from '@/lib/orderService'
 import { OrderStatusBadge } from './OrderCard'
 import { Button } from './ui/button'
 import type { Registration } from '@/lib/orders'
@@ -227,8 +228,8 @@ export default function OrderModal({ open, onOpenChange, sku, initialItems = [],
       // refresh payment items for the current transaction so UI stays in sync
       if (transactionId) {
         try {
-          const { data: payloadData, error: payloadError } = await supabase.rpc('get_payment_page_data', { p_transaction_id: transactionId })
-          if (!payloadError && payloadData) {
+          const payloadData = await getPaymentPageData(transactionId)
+          if (payloadData) {
             const payload: any = payloadData ?? {}
             const orders = payload.orders || {}
             const mapped: Registration[] = []

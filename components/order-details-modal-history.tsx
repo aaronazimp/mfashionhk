@@ -46,7 +46,24 @@ export default function OrderDetailsModal({ open, onOpenChange, customerId, refe
         // RPC may return either `orders` (SingleOrderDetailsResponse) or `action_blocks` (grouped)
         if (Array.isArray(resp?.orders) && resp.orders.length > 0) {
           setStatusPriority((resp as any).status_priority ?? undefined)
-          setPayload(resp as SingleOrderDetailsResponse)
+
+          // Normalize item fields so UI components (e.g., OrderCard) can
+          // rely on `thumbnail` / `variation` properties regardless of RPC shape.
+          try {
+            const normalizedOrders = (resp.orders || []).map((o: any) => ({
+              ...o,
+              items: (o.items || []).map((it: any) => ({
+                ...it,
+                thumbnail: it.thumbnail ?? it.main_image ?? it.imageUrl ?? it.image_url ?? null,
+                variation: it.variation ?? it.variation_text ?? null,
+              })),
+            }))
+
+            const normalizedResp = { ...(resp || {}), orders: normalizedOrders }
+            setPayload(normalizedResp as SingleOrderDetailsResponse)
+          } catch (e) {
+            setPayload(resp as SingleOrderDetailsResponse)
+          }
         } else {
           const blocks: any[] = resp?.action_blocks || []
 
@@ -347,7 +364,7 @@ export default function OrderDetailsModal({ open, onOpenChange, customerId, refe
                       <div>
                        
 
-                        <div className="rounded-2xl overflow-hidden shadow-md mx-auto max-w-4xl">
+                        <div className="rounded-2xl overflow-hidden  mx-auto max-w-4xl">
                           <div className="bg-white rounded-b-2xl p-4 space-y-6 border-t border-gray-100">
                             {(page?.orders || []).map((order) => (
                               <OrderCard key={order.order_number} order={order as any} statusBadge={(s) => <OrderStatusBadge status={s as string} />} />
@@ -384,6 +401,8 @@ export default function OrderDetailsModal({ open, onOpenChange, customerId, refe
             </div>
           )
         })()}
+
+        
       </DialogContent>
     </Dialog>
   )

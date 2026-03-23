@@ -26,7 +26,6 @@ export function HeaderTabMenu({ active }: Props) {
   ];
 
   const ordersSubitems = [
-    
     { href: "/admin/orders/restock", key: "restock", label: "補貨管理" },
     { href: "/admin/orders", key: "orders-follow", label: "訂單跟進" },
     { href: "/admin/orders/history", key: "history", label: "訂單記錄" },
@@ -46,12 +45,7 @@ export function HeaderTabMenu({ active }: Props) {
 
   const isActiveOrdersTop = currentActive === "orders" || currentActive === "history" || currentActive === "restock" || currentActive === "orders-follow";
 
-  React.useEffect(() => {
-    if (isActiveOrdersTop) {
-      setSubmenuOpen(true);
-    }
-  }, [isActiveOrdersTop]);
-
+  // Position the submenu using fixed positioning to stay aligned with the tab button
   React.useLayoutEffect(() => {
     function updatePosition() {
       const wrap = ordersWrapperRef.current;
@@ -113,6 +107,7 @@ export function HeaderTabMenu({ active }: Props) {
           
         </div>
       </div>
+
       <div/>
       {/* Desktop fixed bar (full-width on md+) */}
       <div className="md:fixed md:top-0 md:left-0 md:right-0 md:z-50 md:bg-white/80 md:backdrop-blur-sm">
@@ -123,9 +118,15 @@ export function HeaderTabMenu({ active }: Props) {
       {items.map((it) => {
           if ("submenu" in it) {
             return (
-              <div key={it.key} className="relative" ref={it.key === 'orders' ? ordersWrapperRef : undefined}>
+              <div
+                key={it.key}
+                className="relative"
+                ref={it.key === 'orders' ? ordersWrapperRef : undefined}
+                onMouseEnter={() => setSubmenuOpen(true)}
+              >
                     <button
                       onClick={() => setSubmenuOpen((s) => !s)}
+                      onFocus={() => setSubmenuOpen(true)}
                       aria-expanded={submenuOpen}
                       aria-haspopup="true"
                       className={`${base} flex items-center justify-between ${isActiveOrdersTop ? 'font-medium underline decoration-2 underline-offset-4 decoration-[#C4A59D]' : 'text-[#111827]'}`}
@@ -136,8 +137,7 @@ export function HeaderTabMenu({ active }: Props) {
                         viewBox="0 0 20 20"
                         fill="none"
                         stroke="currentColor"
-                        className={`h-4 w-4 ml-2 transform transition-transform duration-150 ${submenuOpen ? 'rotate-180' : 'rotate-0'}`}
-                      >
+                        className={`h-4 w-4 ml-2 transform transition-transform duration-150 ${submenuOpen ? 'rotate-180' : 'rotate-0'}`}>
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 8l4 4 4-4" />
                       </svg>
                     </button>

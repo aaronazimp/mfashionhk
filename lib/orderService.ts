@@ -80,9 +80,10 @@ export async function getAllCustomerOrders(
  * Fetch payment page data for a transaction via RPC `get_payment_page_data(p_transaction_id TEXT)`.
  */
 export async function getPaymentPageData(
-  p_transaction_id: string
+  p_transaction_id: string,
+  client: any = supabase
 ): Promise<any> {
-  const { data, error } = await supabase.rpc('get_payment_page_data', {
+  const { data, error } = await client.rpc('get_payment_page_data', {
     p_transaction_id,
   })
 
@@ -355,6 +356,31 @@ export async function getCartAndUpsellItems(
 
   if (error) {
     console.error('get_cart_and_upsellitems RPC error:', error)
+    throw new Error(error.message)
+  }
+
+  return data
+}
+
+/**
+ * Submit cart to reels order via RPC `submit_cart_to_reels_order(p_session_token TEXT, p_customer_name TEXT, p_whatsapp TEXT, p_address TEXT)`
+ */
+export async function submitCartToReelsOrder(
+  p_session_token: string | null,
+  p_customer_name: string,
+  p_whatsapp: string,
+  p_address: string,
+  client: any = supabase
+): Promise<any> {
+  const { data, error } = await client.rpc('submit_cart_to_reels_order', {
+    p_session_token,
+    p_customer_name,
+    p_whatsapp,
+    p_address,
+  })
+
+  if (error) {
+    console.error('submit_cart_to_reels_order RPC error:', error)
     throw new Error(error.message)
   }
 

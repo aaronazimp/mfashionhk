@@ -42,10 +42,8 @@ export default function RestockSkuCard({ product, restockCount, onOpen }: Restoc
         </div>
       </Link>
 
-      <CardContent className="py-0 px-3  flex items-center justify-center flex-col">
-        <div className="w-full">
-          <h3 className="font-semibold text-md text-black text-center leading-none pb-2">{product.sku}</h3>
-        </div>
+      <CardContent className="flex items-center  flex-col pb-4">
+      <h3 className="font-semibold text-sm text-black text-center leading-none">{product.sku}</h3>
       </CardContent>
 
       {restockCount >= 1 && (

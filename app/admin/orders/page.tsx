@@ -125,19 +125,11 @@ export default function OrdersPage() {
             <div className="mb-4">
         <HeaderTabMenu active="orders" />
       </div>
-      
-      <div className="flex justify-end">
-        <Link href="/admin/orders/restock">
-          <Button className="px-3 py-1 bg-primary text-white hover:bg-primary/90 focus-visible:ring-0">
-            切換補貨管理頁
-          </Button>
-        </Link>
-      </div>
 
-
-
-      <div className="mt-8 ">
-        <h2 className="text-md font-bold mb-2">目前有 {countMeta?.total_results ?? (countLoading ? '載入中…' : '0')} 筆訂單需要處理</h2>
+      <div className="mb-4 relative">
+        <div className="w-full mt-0">
+          <div className="mx-auto w-full max-w-[820px]">
+            <h2 className="text-md font-bold mb-2">目前有 {countMeta?.total_results ?? (countLoading ? '載入中…' : '0')} 筆訂單需要處理</h2>
 
         {/* Waitlist summary (flexible: supports numeric or object-shaped statusCounts entries) */}
         {(() => {
@@ -170,7 +162,19 @@ export default function OrdersPage() {
           setBatchModalStatusFilter(status)
           setBatchModalOpenTop(true)
         }} />
-      </div>
+          </div>
+            </div>
+            <div className="absolute right-4 top-0">
+              <Link href="/admin/orders/restock">
+                <Button className="px-3 py-1 bg-primary text-white hover:bg-primary/90 focus-visible:ring-0">
+                  切換補貨管理頁
+                </Button>
+              </Link>
+            </div>
+        </div>
+
+
+      
       <OrderDetailsModalAll open={modalOpen} onOpenChange={(v: boolean) => { setModalOpen(v); if (!v) { setModalCustomerId(null); setModalPriorityStatus(null); } }} customerId={modalCustomerId} priorityStatus={modalPriorityStatus} />
 
       <BatchConfirmModal
@@ -283,7 +287,7 @@ function Chips({ statusCounts, onOpenCustomer, onOpenBatch }: { statusCounts?: R
           <button
             key={c.key}
             onClick={() => setSelected(c.key)}
-            className={`relative px-4 py-2 rounded-full text-sm font-medium flex items-center gap-2 overflow-visible ${active ? 'bg-primary text-white' : 'bg-gray-100 text-gray-700'}`}
+            className={`relative px-2 py-2 rounded-full text-xs font-medium flex items-center gap-2 overflow-visible ${active ? 'bg-primary text-white' : 'bg-gray-100 text-gray-700'}`}
           >
             <span>{c.label}</span>
             {typeof count === 'number' && count > 0 && (
@@ -630,48 +634,51 @@ function CustomerList({ statusFilter, page, perPage, onPageChange, onOpenCustome
   // inside the list area instead.
 
   return (
-    <div className="space-y-4 pt-4">
+    <div className="w-full space-y-4 pt-4">
      
      
-      <div className="flex-col text-xs items-start gap-4">
-         
-      {statusFilter === 'confirmed' && (
-        <button
-          onClick={(e) => { e.stopPropagation(); setShowUnder4Only((s) => !s); }}
-          className={`px-3 py-1 rounded-full text-xs ${showUnder4Only ? 'bg-primary text-white' : 'bg-gray-100 text-gray-700'}`}
-        >
-          顯示付款期限小於4小時的訂單
-        </button>
-      )}
-      <div className="flex items-jusified-between mt-4 px-2">
-      {(Number(meta?.total_results) > 1) && (
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          // gather all order keys visible in the list
-          const allKeys: string[] = filteredRows.flatMap((cust: any) => (cust.orders || []).map((o: any, idx: number) => o.order_number || `${cust.customer_id}_${idx}`));
-          const allSelected = allKeys.length > 0 && allKeys.every((k) => !!selectedOrders[k]);
-          if (allSelected) {
-            // deselect all
-            setSelectedOrders({});
-          } else {
-            const newSel: Record<string, boolean> = {};
-            allKeys.forEach((k) => { newSel[k] = true; });
-            setSelectedOrders(newSel);
-          }
-        }}
-        className="text-sm text-gray-700"
-      >
-        全部選取
-      </button>
-      )}
-      <div className="ml-auto text-gray-700">{meta?.total_results} 筆訂單</div>
-      </div>
+      <div className="w-full flex text-xs items-center justify-between gap-4">
+        <div className="flex-1 flex items-start gap-4">
+          {statusFilter === 'confirmed' && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowUnder4Only((s) => !s); }}
+              className={`px-2 py-2 rounded-full text-xs ${showUnder4Only ? 'bg-primary text-white' : 'bg-gray-100 text-gray-700'}`}
+            >
+              顯示付款期限小於4小時的訂單
+            </button>
+          )}
+        </div>
+
+        <div className="flex-1 flex items-center gap-4 justify-end">
+          {(Number(meta?.total_results) > 1) && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                // gather all order keys visible in the list
+                const allKeys: string[] = filteredRows.flatMap((cust: any) => (cust.orders || []).map((o: any, idx: number) => o.order_number || `${cust.customer_id}_${idx}`));
+                const allSelected = allKeys.length > 0 && allKeys.every((k) => !!selectedOrders[k]);
+                if (allSelected) {
+                  // deselect all
+                  setSelectedOrders({});
+                } else {
+                  const newSel: Record<string, boolean> = {};
+                  allKeys.forEach((k) => { newSel[k] = true; });
+                  setSelectedOrders(newSel);
+                }
+              }}
+              className="text-sm text-gray-700"
+            >
+              全部選取
+            </button>
+          )}
+
+          <div className="text-gray-700">{meta?.total_results} 筆訂單</div>
+        </div>
       </div>
 
 
       {/* list */}
-      <List className="space-y-4">
+      <List className="w-full space-y-4">
         {filteredRows.length === 0 ? (
           <EmptyWidget className="mt-4" />
         ) : filteredRows.map((cust: any) => {

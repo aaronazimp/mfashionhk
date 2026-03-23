@@ -58,6 +58,7 @@ export interface OrderGroup {
   transaction_id?: string | null
   payment_deadline?: string | null
   status?: string
+  payment_proof_url?: string | null
   items?: OrderLineItem[]
 }
 
@@ -97,12 +98,15 @@ export interface SearchCustomerHistoryResponse {
 
 export interface ActiveCustomerRecords {
   customer_info: {
-    customer_id: string
-    customer_name: string
-    phone: string
+    phone?: string | null
+    customer_id?: string | null
+    customer_name?: string | null
   }
-  // RPC shape: maps status -> array of orders for that status
-  orders_by_status: Record<string, OrderGroup[]>
+  // RPC shape: maps status -> object containing orders array and status_total
+  orders_by_status: Record<string, {
+    orders: OrderGroup[]
+    status_total: number
+  }>
 }
 
 // Backwards-compat alias (updated name preferred)

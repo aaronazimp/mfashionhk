@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 // Using native <img> for external images in cart previews
 import { supabase } from "@/lib/supabase";
-import { getCartAndUpsellItems } from "@/lib/orderService";
+import { getCartAndUpsellItems, submitCartToReelsOrder } from "@/lib/orderService";
 import type { CartRpcItem, UpsellRpcItem, CustomerProfileRpc } from '@/lib/products';
 import * as Lucide from "lucide-react";
 import { Spinner } from '@/components/ui/spinner'
@@ -229,25 +229,34 @@ export function GlobalCart() {
 
     // Customer info is handled by RPC on submit; keep local state only
 
-  const handleCheckout = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!customerInfo.name || !customerInfo.whatsapp || !customerInfo.address) {
-        toast({ title: "請填寫資料", description: "請輸入稱呼、WhatsApp 及地址", variant: "destructive" });
-        return;
-    }
+    const handleCheckout = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!customerInfo.name || !customerInfo.whatsapp || !customerInfo.address) {
+                toast({ title: "請填寫資料", description: "請輸入稱呼、WhatsApp 及地址", variant: "destructive" });
+                return;
+        }
 
-    setIsCheckingOut(true);
+        // Normalize and validate WhatsApp as exactly 8 digits
+        const whatsappClean = String(customerInfo.whatsapp || '').replace(/\D/g, '');
+        if (!/^\d{8}$/.test(whatsappClean)) {
+                    toast({ title: "請輸入正確嘅 WhatsApp 號碼", description: "請輸入 8 位數字嘅 WhatsApp 號碼", variant: "destructive" });
+                    return;
+            }
+
+        // Persist cleaned whatsapp in state so submission uses normalized value
+        if (whatsappClean !== customerInfo.whatsapp) {
+                setCustomerInfo(prev => ({ ...prev, whatsapp: whatsappClean }));
+        }
+
+        setIsCheckingOut(true);
     try {
-        // Session customer info is handled by the `submit_cart_to_reels_order` RPC.
-
-        const { data, error } = await supabase.rpc('submit_cart_to_reels_order', {
-            p_session_token: sessionToken,
-            p_customer_name: customerInfo.name,
-            p_whatsapp: customerInfo.whatsapp,
-            p_address: customerInfo.address
-        });
-
-        if (error) throw error;
+        // Session customer info is handled by the `submit_cart_to_reels_order` RPC in orderService.
+        const data = await submitCartToReelsOrder(
+            sessionToken || null,
+            customerInfo.name,
+            customerInfo.whatsapp,
+            customerInfo.address
+        );
 
         // If reserved_count > 0, redirect to payment page
         const reservedCount = (data as any)?.reserved_count ?? 0;
@@ -488,7 +497,7 @@ export function GlobalCart() {
                                 )}
 
                                 {cartItems.length > 0 && (
-                                    <form id="checkout-form" onSubmit={handleCheckout} className="space-y-4 mt-8 border-t pt-6">
+                                    <form id="checkout-form" onSubmit={handleCheckout} noValidate className="space-y-4 mt-8 border-t pt-6">
                                         <h3 className="font-bold mb-2 flex items-center gap-2">
                                             
                                             聯絡資料
@@ -510,14 +519,17 @@ export function GlobalCart() {
                                         <div className="space-y-2">
                                             <Label htmlFor="checkout-whatsapp" className="flex items-center gap-1">
                                                  <Lucide.Phone className="w-4 h-4 text-green-500" />
-                                                WhatsApp聯絡號碼
+                                                WhatsApp聯絡
                                             </Label>
                                             <Input
                                                 id="checkout-whatsapp"
                                                 type="tel"
+                                                inputMode="numeric"
+                                                maxLength={8}
+                                                pattern="\\d{8}"
                                                 placeholder="6123 4567"
                                                 value={customerInfo.whatsapp}
-                                                onChange={(e) => setCustomerInfo(prev => ({ ...prev, whatsapp: e.target.value }))}
+                                                onChange={(e) => setCustomerInfo(prev => ({ ...prev, whatsapp: e.target.value.replace(/\D/g, '').slice(0,8) }))}
                                                 required
                                             />
                                         </div>

@@ -103,21 +103,26 @@ export default function BatchConfirmModal({
 
     return groups.map((og: any) => ({
       order_number: og.order_number,
-      order_total: og.order_total ?? og.order_total_amount ?? 0,
+      order_total: og.order_total,
+      // include order-level receipt/proof and identifiers from RPC (no fallbacks)
+      payment_proof_url: og.payment_proof_url,
+      transaction_id: og.transaction_id,
+      status: og.status,
       items: (og.items || []).map((it: any) => ({
-        item_id: it.line_item_id ?? it.item_id ?? `${og.order_number}_${Math.random().toString(36).slice(2,6)}`,
-        price: it.price ?? it.unit_price ?? 0,
+        item_id: it.line_item_id,
+        price: it.price,
         status: it.status,
         quantity: it.quantity,
-        sku_code: it.sku_code ?? it.sku_code_snapshot ?? it.sku ?? undefined,
-        sku: it.sku ?? it.sku_code ?? undefined,
-        thumbnail: it.main_image ?? it.thumbnail ?? it.imageUrl ?? null,
-        imageUrl: it.main_image ?? it.thumbnail ?? it.imageUrl ?? null,
-        receipt_url: it.receipt_url ?? it.payment_proof_url ?? null,
-        transaction_id: it.transaction_id ?? it.tx ?? it.transaction ?? null,
-        variation: it.variation_text ?? it.variation_snapshot ?? it.variation ?? undefined,
-        remarks: it.remark ?? it.remarks ?? null,
-        payment_deadline: it.payment_deadline ?? it.deadline ?? null,
+        sku_code: it.sku_code,
+        sku: it.sku,
+        thumbnail: it.main_image,
+        imageUrl: it.main_image,
+        payment_proof_url: it.payment_proof_url,
+        receipt_url: it.receipt_url,
+        transaction_id: it.transaction_id,
+        variation: it.variation_text,
+        remarks: it.remark,
+        payment_deadline: it.payment_deadline,
       })),
     }))
   }, [bulkData, currentIndex])
@@ -195,7 +200,7 @@ export default function BatchConfirmModal({
         onClick={() => onOpenChange(false)}
       />
 
-      <div className="relative w-[90vw] max-w-[400px] max-h-[90vh] bg-white rounded-3xl shadow-2xl overflow-auto">
+      <div className="relative w-[90vw] max-w-[400px] max-h-[80vh] bg-white rounded-3xl shadow-2xl overflow-auto">
        
 
         {/* Header */}
@@ -288,7 +293,8 @@ export default function BatchConfirmModal({
             {(() => {
               const firstOrder = extractedOrderGroups[0]
               const firstItem = firstOrder?.items?.[0] ?? null
-              const url = firstItem?.receipt_url ?? firstItem?.payment_proof_url ?? firstItem?.imageUrl ?? firstItem?.thumbnail ?? null
+                // Payment proof image is supplied at order level in RPC responses
+                const url = firstOrder?.payment_proof_url ?? firstItem?.payment_proof_url
               if (url) {
                 return (
                   <a href={url} target="_blank" rel="noreferrer" className="w-full h-full flex items-center justify-center">

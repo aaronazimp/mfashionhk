@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { Metadata, ResolvingMetadata } from "next";
 import PaymentClient from "./payment-client";
 import type { PaymentPageOrder } from "../../../lib/products";
+import { getPaymentPageData } from "../../../lib/orderService";
 
 // Ensure we have the environment variables
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -30,20 +31,14 @@ async function getOrder(id: string): Promise<PaymentPageOrder | null> {
   // Call the server-side RPC which centralises payment-summary logic
   let rpcData: any = null;
   try {
-    const { data, error } = await supabase.rpc("get_payment_page_data", { p_transaction_id: id });
-    console.log("Supabase RPC get_payment_page_data return:", data);
-    if (error) {
-      console.warn("RPC get_payment_page_data error:", error);
-      // In development, do not abort immediately — allow a dev fallback later so the page can render
-      if (process.env.NODE_ENV === 'production') {
-        return null;
-      }
+    rpcData = await getPaymentPageData(id, supabase);
+    console.log("Supabase RPC get_payment_page_data return:", rpcData);
+  } catch (err: any) {
+    console.warn("RPC get_payment_page_data error:", err);
+    // Network / DNS or RPC errors surface here (fetch failed / ENOTFOUND / Postgres error)
+    if (process.env.NODE_ENV === 'production') {
+      return null;
     }
-    rpcData = data;
-  } catch (err) {
-    // Network / DNS errors surface here (fetch failed / ENOTFOUND)
-    console.error("Network or fetch error when calling Supabase RPC:", err);
-    return null;
   }
 
   // Normalize RPC result: Supabase may return an array wrapper or object
