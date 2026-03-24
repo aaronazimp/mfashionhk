@@ -162,7 +162,7 @@ export default function OrdersHistoryPage() {
             <Lucide.Search className="absolute left-3 top-3 h-4 w-4 text-gray-500" />
             <Input
               placeholder="搜尋訂單、姓名或編號..."
-              className="pl-10 bg-white border-gray-200"
+              className="pl-10 bg-white rounded-full text-xs"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -176,7 +176,7 @@ export default function OrdersHistoryPage() {
               size="sm"
               variant={filter === f.key ? 'default' : 'outline'}
               onClick={() => setFilter(f.key)}
-              className="rounded-full"
+              className={`rounded-full text-xs py-2 px-2 border-0 ${filter === f.key ? '' : 'bg-gray-100 dark:bg-slate-800'}`}
             >
               {f.label}
             </Button>

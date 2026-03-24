@@ -19,7 +19,8 @@ export default function Page() {
         .from('SKU_details')
         .select('id, reels_video_url')
         .eq('is_reels_active', true)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(50);
 
       if (error) {
         console.error('Error fetching products:', error);

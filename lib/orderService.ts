@@ -1,7 +1,7 @@
 // src/services/orderService.ts
 import { supabase } from '@/lib/supabase'; // Adjust this path to your Supabase client
 
-import type { OrderLineItem, OrderGroup, ActiveCustomerRecords } from '@/types/order'
+import type { OrderLineItem, OrderGroup, ActiveCustomerRecords, CustomerOrderHistoryResponse } from '@/types/order'
 import type { SingleSkuDetails } from '@/lib/products'
 
 
@@ -77,14 +77,36 @@ export async function getAllCustomerOrders(
 }
 
 /**
- * Fetch payment page data for a transaction via RPC `get_payment_page_data(p_transaction_id TEXT)`.
+ * Fetch customer order history via RPC `get_customer_order_history(p_whatsapp TEXT, p_transaction_id TEXT)`.
+ */
+export async function getCustomerOrderHistory(
+  p_whatsapp: string,
+  p_transaction_id: string
+): Promise<CustomerOrderHistoryResponse> {
+  const { data, error } = await supabase.rpc('get_customer_order_history', {
+    p_whatsapp,
+    p_transaction_id,
+  })
+
+  if (error) {
+    console.error('get_customer_order_history RPC error:', error)
+    throw new Error(error.message)
+  }
+
+  return data as CustomerOrderHistoryResponse
+}
+
+/**
+ * Fetch payment page data for a transaction via RPC `get_payment_page_data(p_transaction_id TEXT, p_whatsapp TEXT)`.
  */
 export async function getPaymentPageData(
   p_transaction_id: string,
+  p_whatsapp: string,
   client: any = supabase
 ): Promise<any> {
   const { data, error } = await client.rpc('get_payment_page_data', {
     p_transaction_id,
+    p_whatsapp,
   })
 
   if (error) {

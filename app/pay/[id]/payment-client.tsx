@@ -11,6 +11,7 @@ import * as Lucide from "lucide-react";
 import { PaymentUploadForm } from "@/components/payment-upload-form";
 import { CountdownTimer } from "@/components/countdown-timer";
 import Link from "next/link";
+import OrderCard from '@/components/OrderCard';
 
 // Custom timer for HH:MM:SS (hours:minutes:seconds)
 function CustomCountdownTimer({ targetDate, onEnd }: { targetDate: Date, onEnd?: () => void }) {
@@ -87,6 +88,7 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
   const fetchOrder = async (id: string, setLiveOrder: React.Dispatch<React.SetStateAction<PaymentPageOrder>>) => {
     try {
       const data = await getPaymentPageData(id);
+      setLastRpcResponse?.(data ?? null);
       if (!data) return;
       let payload: any = data;
       if (Array.isArray(payload)) {
@@ -138,6 +140,7 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
         },
         (payload) => {
           console.log('[Supabase Realtime] reels_orders payload:', payload);
+          setLastRealtimePayload?.(payload ?? null);
           if (payload.new) {
             setLiveOrder((prev) => ({ ...prev, ...payload.new }));
           }
@@ -165,6 +168,9 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
   }, [liveOrder.payment_deadline, liveOrder.deadline]);
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('payme');
+  const [lastRpcResponse, setLastRpcResponse] = useState<any>(null);
+  const [lastRealtimePayload, setLastRealtimePayload] = useState<any>(null);
+  const [showDebug, setShowDebug] = useState<boolean>(false);
 
   // Use pay_now_groups as the canonical source for payable items grouped by original order number
   const payNowGroups: Record<string, PaymentPageItem[]> = (liveOrder.pay_now_groups ?? {}) as Record<string, PaymentPageItem[]>;
@@ -218,6 +224,14 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
       <div className="min-h-screen bg-[#FFF4E5] flex items-center justify-center p-4">
         <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in duration-500 relative z-[9999]">
           <div className="p-6 md:p-8 space-y-6">
+            <div className="flex justify-end">
+              <button
+                onClick={() => setShowDebug((s) => !s)}
+                className="text-xs text-gray-400 hover:text-gray-600"
+              >
+                {showDebug ? 'Hide debug' : 'Show debug'}
+              </button>
+            </div>
             {/* Check if order is cancelled */}
             {liveOrder.status === 'cancelled' ? (
               <div className="min-h-screen bg-[#FFF4E5] flex items-center justify-center p-4 font-sans">
@@ -275,91 +289,27 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
                         {Object.keys(payNowGroups).length > 0 ? (
                           Object.entries(payNowGroups).map(([origOrderNumber, items]) => (
                             <div key={origOrderNumber} className="mb-3">
-                              <div className="bg-white rounded-lg shadow-md overflow-hidden">
-                                <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between bg-gray-50">
-                                  <div className="text-xs text-zinc-500">訂單 #{origOrderNumber}</div>
-                                </div>
-                                <div className="divide-y divide-gray-100">
-                                {items.map((itRaw: any) => {
-                                  const it = itRaw as any;
-                                  const img = it.image_url ?? it.sku_img_url;
-                                  const title = it.sku_code ?? it.sku_code_snapshot ?? it.sku ?? '';
-                                  const variation = it.variation_snapshot ?? it.variation ?? '';
-                                    return (
-                                    <div key={it.id} className="flex items-start justify-between py-2 px-3">
-                                      <div className="flex items-center gap-3">
-                                        <div className="w-12 h-12 rounded-md overflow-hidden bg-zinc-100 flex-shrink-0">
-                                          {img ? (
-                                            <img src={`/api/proxy-image?url=${encodeURIComponent(img ?? '')}`} alt={title} className="w-full h-full object-cover object-top" onError={(e)=>{(e.currentTarget as HTMLImageElement).src='/placeholder.svg'}} />
-                                          ) : (
-                                            <div className="w-full h-full bg-zinc-200" />
-                                          )}
-                                        </div>
-                                        <div>
-                                          <div className="text-sm font-extrabold font-mono text-zinc-600 max-w-[200px] truncate">{title}</div>
-                                          <div className="text-xs text-zinc-500 mt-1">{variation}{variation ? ' ' : ''}<span className="ml-1">x{it.quantity}</span></div>
-                                          
-                                        </div>
-                                      </div>
-                                      <div className="text-right self-start">
-                                        <div className={`font-bold ${it.status === 'waitlist' || it.status === 'cancelled' ? 'line-through text-zinc-500' : ''}`}>$ {(Number(it.row_total ?? (it.price * it.quantity)) || 0).toFixed(0)}</div>
-                                        {/* short status indicator on the price side for clarity */}
-                                        <div className="mt-1">
-                                          {it.status === 'waitlist' && <span className="text-xs inline-block bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full">候補中</span>}
-                                          {it.status === 'confirmed' && <span className="text-xs inline-block bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full">已確認</span>}
-                                          {it.status === 'cancelled' && <span className="text-xs inline-block bg-gray-50 text-gray-600 px-2 py-0.5 rounded-full">已取消</span>}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                                </div>
-                              </div>
+                              <OrderCard
+                                order={{
+                                  order_number: origOrderNumber,
+                                  items: (items || []).map((it: any) => ({
+                                    ...it,
+                                    thumbnail: it.thumbnail ?? it.image_url ?? it.sku_img_url ?? it.imageUrl ?? null,
+                                  })),
+                                }}
+                                className="bg-white rounded-lg shadow-md overflow-hidden"
+                              />
                             </div>
                           ))
                         ) : (
                           <div className="text-sm text-zinc-500">無明細</div>
                         )}
 
-                        {/* Cancelled Items (inside main container) */}
-                        {cancelledItems && cancelledItems.length > 0 && (
-                          <div className="mt-4">
-                            <h4 className="text-sm font-medium text-[#6b7280] mb-2">已取消項目</h4>
-                            <div className="space-y-2">
-                              {cancelledItems.map((itRaw: any, idx: number) => {
-                                const it = itRaw as any;
-                                const img = it.image_url ?? it.sku_img_url;
-                                const title = it.sku_code ?? it.sku ?? it.sku_code_snapshot ?? it.sku_code_snapshot ?? it.product_name ?? `Item ${idx+1}`;
-                                const variation = it.variation_snapshot ?? it.variation ?? it.variation_snapshot ?? '';
-                                return (
-                                  <div key={it.id ?? idx} className="flex items-start justify-between py-2 px-3 opacity-60">
-                                    <div className="flex items-center gap-3">
-                                      <div className="w-12 h-12 rounded-md overflow-hidden bg-zinc-100 flex-shrink-0">
-                                        {img ? (
-                                          <img src={`/api/proxy-image?url=${encodeURIComponent(img ?? '')}`} alt={title} className="w-full h-full object-cover object-top" onError={(e)=>{(e.currentTarget as HTMLImageElement).src='/placeholder.svg'}} />
-                                        ) : (
-                                          <div className="w-full h-full bg-zinc-200" />
-                                        )}
-                                      </div>
-                                      <div>
-                                        <div className="text-sm font-extrabold line-through text-zinc-500">{title}</div>
-                                        <div className="text-xs text-zinc-400">{variation} <span className="ml-1">x{it.quantity}</span></div>
-                                        {it.remark && <div className="text-xs text-zinc-400 mt-1">{it.remark}</div>}
-                                      </div>
-                                    </div>
-                                    <div className="text-sm text-zinc-500 line-through self-start">{'$' + (Number(it.row_total ?? (it.price * it.quantity)) || 0).toFixed(0)}</div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
+                      
                       </div>
                     </div>
 
                     
-
-                    {/* Waitlist section removed - items are shown grouped per order with status badges */}
 
                     
 
@@ -552,6 +502,23 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
               </>
             )}
           </div>
+          {showDebug && (
+            <div className="px-6 py-4 border-t bg-gray-50 text-xs font-mono max-h-64 overflow-auto">
+              <details open className="mb-2">
+                <summary className="cursor-pointer text-sm font-medium">RPC Response</summary>
+                <pre className="whitespace-pre-wrap mt-2">{JSON.stringify(lastRpcResponse, null, 2)}</pre>
+              </details>
+              <details className="mb-2">
+                <summary className="cursor-pointer text-sm font-medium">Realtime Payload</summary>
+                <pre className="whitespace-pre-wrap mt-2">{JSON.stringify(lastRealtimePayload, null, 2)}</pre>
+              </details>
+              <details>
+                <summary className="cursor-pointer text-sm font-medium">Live Order (derived)</summary>
+                <pre className="whitespace-pre-wrap mt-2">{JSON.stringify(liveOrder, null, 2)}</pre>
+              </details>
+            </div>
+          )}
+
           <div className="px-6 pb-6">
             <p className="text-[11px] text-gray-400 font-mono text-center">交易編號: {liveOrder.transaction_id || liveOrder.order_number || (liveOrder.id ? liveOrder.id.slice(0, 8) : '')}</p>
           </div>

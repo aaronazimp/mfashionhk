@@ -616,15 +616,15 @@ export default function OrderCard({ order, className = '', compact = false, stat
   })
 
   return (
-    <div className={`relative rounded-2xl overflow-hidden shadow-sm ${className}`}>
+    <div className={`w-[325px] relative rounded-2xl overflow-hidden shadow-sm ${className}`}>
       {hasShippedUI ? (
         <div className="absolute inset-0 z-40 flex items-center justify-center pointer-events-none">
           {/* backdrop covers the entire card */}
-          <div className="absolute inset-0 bg-gray-800/60 rounded-2xl pointer-events-none" />
+          <div className="absolute inset-0 bg-gray-800/60 rounded-lg pointer-events-none" />
           {/* centered badge scales with screen size but the backdrop covers full card */}
           <div className="relative z-50 w-full h-full flex items-center justify-center pointer-events-none px-4 py-6">
             <div className="w-full max-w-3xl">
-              <div className="text-white rounded-2xl px-6 py-4 text-center text-lg sm:text-2xl md:text-3xl font-extrabold tracking-wider mx-auto flex flex-col items-center justify-center gap-3">
+              <div className="text-white rounded-xl px-6 py-4 text-center text-lg sm:text-2xl md:text-3xl font-extrabold tracking-wider mx-auto flex flex-col items-center justify-center gap-3">
                 <Lucide.Truck className="w-8 h-8" />
                 <span>已寄出</span>
               </div>
@@ -715,11 +715,13 @@ export default function OrderCard({ order, className = '', compact = false, stat
                   <div className="flex items-center gap-4">
                     {/* Thumbnail column */}
                     <div className="w-16 h-16 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
-                      { (it.thumbnail || it.imageUrl) ? (
-                        <Image src={it.thumbnail ?? it.imageUrl ?? ''} alt={String(it.sku_code ?? it.sku ?? '')} width={64} height={64} className="object-cover w-full h-full" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-sm text-gray-400">無圖</div>
-                      )}
+                      {(() => {
+                        const imgSrc = (it as any).thumbnail ?? (it as any).imageUrl ?? (it as any).image_url ?? (it as any).image ?? ''
+                        if (imgSrc) {
+                          return <Image src={imgSrc} alt={String(it.sku_code ?? it.sku ?? '')} width={64} height={64} className="object-cover w-full h-full" />
+                        }
+                        return <div className="w-full h-full flex items-center justify-center text-sm text-gray-400">無圖</div>
+                      })()}
                     </div>
                     <div className="flex-1 min-w-0 ">
                       <div className="text-sm font-semibold text-gray-900 ">{it.sku_code ?? it.sku}</div>

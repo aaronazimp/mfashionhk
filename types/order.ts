@@ -214,6 +214,38 @@ export type RpcResponse = {
   total_orders_count?: number
 }
 
+/**
+ * Response shape for RPC `get_customer_order_history` used by the order-history page
+ */
+export interface CustomerOrderHistoryItem {
+  id: string
+  price: number
+  status: string
+  quantity: number
+  sku_code: string
+  image_url: string
+  variation: string
+  created_at: string
+  order_number: string
+  transaction_id: string
+  payment_deadline?: string | null
+  requires_payment: boolean
+}
+
+export interface CustomerOrderHistoryEntry {
+  base_order_no: string
+  items: CustomerOrderHistoryItem[]
+}
+
+export interface CustomerOrderHistoryResponse {
+  history: CustomerOrderHistoryEntry[]
+  success: boolean
+  whatsapp: string
+  total_orders: number
+  customer_name: string
+  transaction_id?: string | null
+}
+
 // Response shape for RPC `get_single_order_details(p_customer_id UUID, p_reference_id TEXT)`
 export interface SingleOrderLineItem {
   price?: number
