@@ -148,13 +148,13 @@ export default function RestockPage() {
         </div>
         <div className="flex flex-wrap items-center gap-4 mb-6">
           <input
-            placeholder="搜尋sku..."
+            placeholder="搜尋貨號..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="flex-1 min-w-0 border rounded-full py-2 px-4 bg-white shadow-sm focus:outline-none"
+            className="text-xs flex-1 min-w-0 border rounded-full py-2 px-4 bg-white shadow-sm focus:outline-none"
           />
           <Link href="/admin/orders">
-            <Button className="h-9 whitespace-nowrap">切換訂單管理頁</Button>
+            <Button className="h-8 whitespace-nowrap text-xs ">切換訂單管理頁</Button>
           </Link>
         </div>
 
@@ -165,7 +165,7 @@ export default function RestockPage() {
               key={opt.key}
               onClick={() => { setFilterType(opt.key); setPage(1); }}
               className={
-                `px-3 py-1 rounded-full text-sm transition-colors ${filterType === opt.key ? 'bg-[#C4A59D] text-white' : 'bg-white border border-gray-200 text-gray-700'}`
+                `px-3 py-1 rounded-full text-xs transition-colors ${filterType === opt.key ? 'bg-[#C4A59D] text-white' : 'bg-white border border-gray-200 text-gray-700'}`
               }
             >
               {opt.label}
@@ -186,7 +186,7 @@ export default function RestockPage() {
             </div>
             <div>
               {typeof restockMetadata.total_results !== 'undefined' ? (
-                <>共 {restockMetadata.total_results} 筆結果</>
+                <div className="text-xs text-gray-600">共 {restockMetadata.total_results} 筆結果</div>
               ) : null}
             </div>
           </div>

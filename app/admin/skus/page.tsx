@@ -112,12 +112,12 @@ export default function AdminSkusPage() {
           
 
           {/* Filters Bar */}
-          <div className="flex flex-col md:flex-row gap-4 bg-gray-50/50 p-4 rounded-lg border border-gray-100">
+          <div className="flex flex-col md:flex-row gap-4 bg-gray-50/50">
              <div className="relative flex-1">
                 <Lucide.Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
                 <Input
                     placeholder="搜尋 SKU 或名稱..."
-                    className="pl-9 bg-white border-gray-200"
+                    className="pl-9 bg-white border-gray-200 text-xs"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                 />
@@ -130,7 +130,7 @@ export default function AdminSkusPage() {
           <div className="flex items-center justify-between gap-3 overflow-x-auto pb-2 border-b border-gray-100">
             <div className="flex items-center gap-3">
               <Select value={selectedCategory ?? "all"} onValueChange={(v) => setSelectedCategory(v === "all" ? null : v)}>
-                <SelectTrigger className="w-[160px] bg-white border-gray-200">
+                <SelectTrigger className="text-xs w-[160px] bg-white border-gray-200">
                   <SelectValue placeholder="選擇類型" />
                 </SelectTrigger>
                 <SelectContent>
@@ -160,7 +160,7 @@ export default function AdminSkusPage() {
               )}
             </div>
 
-            <div className="text-sm text-gray-500">
+            <div className="text-xs text-gray-500">
               共 {totalItems} 筆結果
             </div>
           </div>
@@ -194,18 +194,18 @@ export default function AdminSkusPage() {
                     )}
                   </div>
 
-                  <div className="flex-1 min-w-0 py-1">
+                  <div className="flex-1">
                     <div className="flex justify-between items-start">
                       <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-medium">
+                        <div className="flex items-center gap-2 mb-2">
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-medium">
                                 {product.type}
                             </span>
                             {product.is_discount_eligible && (
-                              <span className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded">特別折扣</span>
+                              <span className="text-[10px] bg-green-100 text-green-800 px-2 py-0.5 rounded">特別折扣</span>
                             )}
                             {product.is_upsell_item && (
-                              <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">加購商品</span>
+                              <span className="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded">加購商品</span>
                             )}
                         </div>
                         <h3 className="font-semibold text-sm text-[#111827] w-[180px] sm:w-[200px]">

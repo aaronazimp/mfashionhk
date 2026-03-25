@@ -616,7 +616,7 @@ export default function OrderCard({ order, className = '', compact = false, stat
   })
 
   return (
-    <div className={`w-[325px] relative rounded-2xl overflow-hidden shadow-sm ${className}`}>
+    <div className={`w-[325px] relative rounded-2xl overflow-hidden shadow-sm mx-auto self-start ${className}`}>
       {hasShippedUI ? (
         <div className="absolute inset-0 z-40 flex items-center justify-center pointer-events-none">
           {/* backdrop covers the entire card */}

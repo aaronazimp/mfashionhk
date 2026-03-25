@@ -64,7 +64,7 @@ export default async function OrderHistoryPage({ searchParams }: Props) {
       </div>
       {/* Sticky return button to /flash-sale */}
       <div className="fixed bottom-4 left-0 right-0 flex justify-center pointer-events-none z-50">
-        <Link href="/flash-sale" className="pointer-events-auto bg-primary text-white px-5 py-3 rounded-full shadow-lg hover:opacity-95 transition-opacity">
+        <Link href="/flash-sale" className="pointer-events-auto bg-primary text-white text-xs px-4 py-2 rounded-full shadow-lg hover:opacity-95 transition-opacity">
           返回首頁  
         </Link>
       </div>

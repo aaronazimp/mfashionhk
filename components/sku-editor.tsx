@@ -760,7 +760,7 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
                   id="name" 
                   value={product.name} 
                   onChange={e => handleChange('name', e.target.value)}
-                  className="text-sm font-medium"
+                  className="text-xs font-medium"
                 />
               </div>
              </div>
@@ -774,7 +774,7 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
                   type="number" 
                   value={product.price} 
                   onChange={e => handleChange('price', e.target.value)}
-                  className="block w-full rounded-md border-gray-200 p-2 bg-white"
+                  className="block w-full rounded-md border-gray-200 p-2 bg-white text-xs"
                  />
                  
                </div>
@@ -786,7 +786,7 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
                    value={surcharge}
                    onChange={e => handleSurchargeChange(e.target.value)}
                    placeholder="0"
-                   className="block rounded-md border-gray-200 p-2 bg-white w-24"
+                   className="block rounded-md border-gray-200 p-2 bg-white w-24 text-xs"
                  />
                </div>
 
@@ -1075,7 +1075,7 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
               <div className="text-sm text-gray-500">目前沒有變體。按下「新增變體」開始。</div>
             )}
             {localVariations.map((v, vi) => (
-              <div key={vi} className="border rounded-md p-3">
+              <div key={vi} className="shadow rounded-md p-3">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-3">
                     <Label className="text-xs">尺碼</Label>
@@ -1087,17 +1087,68 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
                     </Button>
                   </div>
                 </div>
-
-                <div className="space-y-2">
-                  <div className="text-xs text-gray-600 mb-1">顏色 / 庫存 / 配額</div>
+<div className="pt-3">
+                    
+                    <div className="flex gap-2 items-center">
+                      <div className="flex flex-col">
+                        <div className="text-[9px] text-gray-500 mb-1">胸圍</div>
+                        <Input
+                          value={String(v.chest ?? '')}
+                          onChange={e => updateVariationField(vi, 'chest', Number(e.target.value))}
+                          
+                          type="number"
+                          className="text-xs w-10"
+                        />
+                      </div>
+                      <div className="flex flex-col">
+                        <div className="text-[9px] text-gray-500 mb-1">腰圍</div>
+                        <Input
+                          value={String(v.waist ?? '')}
+                          onChange={e => updateVariationField(vi, 'waist', Number(e.target.value))}
+                         
+                          type="number"
+                          className="text-xs w-10"
+                        />
+                      </div>
+                      <div className="flex flex-col">
+                        <div className="text-[9px] text-gray-500 mb-1">長度</div>
+                        <Input
+                          value={String(v.length ?? '')}
+                          onChange={e => updateVariationField(vi, 'length', Number(e.target.value))}
+                         
+                          type="number"
+                          className="text-xs w-10"
+                        />
+                      </div>
+                      <div className="flex flex-col">
+                        <div className="text-[9px] text-gray-500 mb-1">臀圍</div>
+                        <Input
+                          value={String(v.hip ?? '')}
+                          onChange={e => updateVariationField(vi, 'hip', Number(e.target.value))}
+                          
+                          type="number"
+                          className="text-xs w-10"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                <div className="mt-2 space-y-2">
+                 
                   {(v.colors || []).map((c: any, ci: number) => (
                     <div key={ci} className="flex gap-2 items-center mb-2">
-                      <Input value={c.color || ''} onChange={e => updateColorField(vi, ci, 'color', e.target.value)} placeholder="顏色" className="text-xs w-36" />
-                      <Input value={String(c.stock ?? '')} onChange={e => updateColorField(vi, ci, 'stock', Number(e.target.value))} placeholder="庫存" type="number" className="text-xs w-24" />
-                      <Input value={String(c.reels_quota ?? '')} onChange={e => updateColorField(vi, ci, 'reels_quota', Number(e.target.value))} placeholder="配額" type="number" className="text-xs w-24" />
-                      <Button variant="ghost" size="icon" onClick={() => requestRemoveColor(vi, ci)}>
-                        <X className="w-4 h-4 text-red-600" />
-                      </Button>
+                      <div className="flex flex-col">
+                        <div className="text-[9px] text-gray-500 mb-1">顏色</div>
+                        <Input value={c.color || ''} onChange={e => updateColorField(vi, ci, 'color', e.target.value)} placeholder="顏色" className="text-xs w-20" />
+                      </div>
+                      <div className="flex flex-col">
+                        <div className="text-[9px] text-gray-500 mb-1">庫存</div>
+                        <Input value={String(c.stock ?? '')} onChange={e => updateColorField(vi, ci, 'stock', Number(e.target.value))} placeholder="庫存" type="number" className="text-xs w-20" />
+                      </div>
+                      <div className="flex flex-col">
+                        <div className="text-[9px] text-gray-500 mb-1">配額</div>
+                        <Input value={String(c.reels_quota ?? '')} onChange={e => updateColorField(vi, ci, 'reels_quota', Number(e.target.value))} placeholder="配額" type="number" className="text-xs w-20" />
+                      </div>
+                      
                     </div>
                   ))}
                   <div>
@@ -1105,6 +1156,7 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
                       <Plus className="w-4 h-4 mr-2" /> 新增顏色
                     </Button>
                   </div>
+                  
                 </div>
               </div>
             ))}
@@ -1137,26 +1189,18 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
       {/* Size Details Dialog */}
       <Dialog open={sizeDialogOpen} onOpenChange={setSizeDialogOpen}>
         <DialogContent className="max-w-md w-[90vw]">
-          <DialogTitle className="text-xs">尺碼詳情</DialogTitle>
+          <DialogTitle className="text-xs text-center">尺碼詳情</DialogTitle>
           <div className="py-2 space-y-3">
-            <div className="text-sm text-gray-700">尺寸: {activeSizeName || '-'}</div>
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <div className="text-gray-600">臀圍</div>
-              <div>{activeSizeVariation?.hip ?? '-'}</div>
-              <div className="text-gray-600">胸圍</div>
-              <div>{activeSizeVariation?.chest ?? '-'}</div>
-              <div className="text-gray-600">腰圍</div>
-              <div>{activeSizeVariation?.waist ?? '-'}</div>
-              <div className="text-gray-600">長度</div>
-              <div>{activeSizeVariation?.length ?? '-'}</div>
+            <div className="text-sm text-gray-700 flex flex-wrap items-center gap-4">
+              <div>尺寸: {activeSizeName || '-'}</div>
+              <div>顏色: {(activeSizeVariation?.colors || []).map((c: any) => c.color).filter(Boolean).join(', ') || '-'}</div>
             </div>
-
             <div>
-              <div className="text-xs text-gray-600 mb-2">顏色列表</div>
+             
               <div className="space-y-2">
                 {(activeSizeVariation?.colors || []).map((c: any, idx: number) => (
                   <div key={idx} className="flex items-center justify-between text-sm">
-                    <div>{c.color || '–'}</div>
+                   
                     <div className="text-gray-500">庫存: {typeof c.stock === 'number' ? c.stock : (c.stock ? Number(c.stock) : '-')}</div>
                     <div className="text-gray-500">配額: {typeof c.reels_quota === 'number' ? c.reels_quota : (c.reels_quota ? Number(c.reels_quota) : '-')}</div>
                   </div>
@@ -1166,10 +1210,29 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
                 )}
               </div>
             </div>
-
-            <div className="flex justify-end">
-              <Button size="sm" onClick={() => setSizeDialogOpen(false)}>關閉</Button>
+            <div className="grid grid-cols-2 gap-4 text-sm mt-9">
+             
+              <div>
+                <div className="text-gray-600">胸圍</div>
+                <div>{activeSizeVariation?.chest ?? '-'}</div>
+              </div>
+              <div>
+                <div className="text-gray-600">腰圍</div>
+                <div>{activeSizeVariation?.waist ?? '-'}</div>
+              </div>
+              <div>
+                <div className="text-gray-600">長度</div>
+                <div>{activeSizeVariation?.length ?? '-'}</div>
+              </div>
+               <div>
+                <div className="text-gray-600">臀圍</div>
+                <div>{activeSizeVariation?.hip ?? '-'}</div>
+              </div>
             </div>
+
+            
+
+           
           </div>
         </DialogContent>
       </Dialog>

@@ -118,7 +118,6 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
         console.log('get_restock_allocation_data payload', payload);
         if (Array.isArray(data) && data.length > 0 && data[0].get_restock_allocation_data) payload = data[0].get_restock_allocation_data;
         else if (data.get_restock_allocation_data) payload = data.get_restock_allocation_data;
-
         // RPC returns a `sizes` array with nested `colors`.
         // capture main preview image if present
         const mainPreview = payload?.main_preview_image ?? payload?.mainPreviewImage ?? null;
@@ -680,7 +679,7 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
           {step === 3 && (
             <div>
               <SkuSummary sku={sku} rows={rows} preview={previewImage} />
-              <div className="h-[450px] overflow-y-auto">
+              <div className="max-h-[90vh] overflow-y-auto">
                 <div className="text-xs font-semibold mt-4 text-left">分配名單</div>
                 {/* Variations that have orders/waitlist */}
                 <div className="rounded p-3 divide-y divide-gray-200">
@@ -798,13 +797,13 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
                             <tr key={r.id} className="border-t">
                                 <td className="py-2">{r.size} | {r.color}</td>
                                 <td className="py-2 text-right">
-                                  <div className="text-xs text-gray-700">{(quotaFromRpc[r.id] ?? r.current_quota ?? '-')}</div>
+                                  <div className="text-xs text-gray-700">{quotaFromRpc[r.id] ?? r.current_quota ?? '-'}</div>
                                 </td>
                                 <td className="py-2 text-right">
-                                  <div className="text-xs">{(r.currentQty ?? r.current_stock ?? '')}</div>
+                                  <div className="text-xs">{r.currentQty ?? r.current_stock ?? ''}</div>
                                 </td>
                                 <td className="py-2 text-right font-bold">
-                                  <div className="text-xs">{availableFor(r.id)}</div>
+                                  <div className="text-xs">{(Number(quotaFromRpc[r.id] ?? r.current_quota ?? 0) + Number(r.currentQty ?? r.current_stock ?? 0))}</div>
                                 </td>
                               </tr>
                           ))}
@@ -813,7 +812,7 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
                     )}
                   </div>
 
-                  {/* debug UI removed */}
+                 
 
               <div className="mt-6">
                 <Button size="sm" className="bg-[#C4A59D] text-white" onClick={() => { handleClose(); }}>確認</Button>
@@ -821,6 +820,8 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
             </div>
           )}
         </div>
+
+        {/* debug panel removed */}
 
         <AlertDialogFooter />
       </AlertDialogContent>

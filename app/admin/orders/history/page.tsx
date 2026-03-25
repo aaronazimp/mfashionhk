@@ -18,6 +18,7 @@ import EmptyWidget from '../../../../components/EmptyWidget'
 import OrderDetailsModal from '@/components/order-details-modal-history'
 import { searchCustomerHistory } from '@/lib/orderService'
 import { useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import PaginationControls from '@/components/ui/pagination-controls'
 
 const FILTERS = [
@@ -43,6 +44,7 @@ export default function OrdersHistoryPage() {
   const [modalOpen, setModalOpen] = useState<boolean>(false)
   const [modalCustomerId, setModalCustomerId] = useState<string | null>(null)
   const [modalReferenceId, setModalReferenceId] = useState<string | null>(null)
+  const router = useRouter()
 
   const toggleExpanded = (id?: string | number) => {
     const key = String(id ?? 'unknown')
@@ -247,7 +249,16 @@ export default function OrdersHistoryPage() {
 
                         {cust.has_more_history && (
                           <div className="flex justify-center mt-2">
-                            <Button size="sm" variant="ghost" className="text-xs" onClick={(e) => { e.stopPropagation(); /* load more per-customer history if implemented */ }}>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-xs"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const id = cust.customer_id
+                                if (id) router.push(`/customers/${encodeURIComponent(String(id))}/orders`)
+                              }}
+                            >
                               顯示更多
                             </Button>
                           </div>

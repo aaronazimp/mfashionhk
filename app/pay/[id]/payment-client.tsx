@@ -12,6 +12,7 @@ import { PaymentUploadForm } from "@/components/payment-upload-form";
 import { CountdownTimer } from "@/components/countdown-timer";
 import Link from "next/link";
 import OrderCard from '@/components/OrderCard';
+import { useRouter } from 'next/navigation';
 
 // Custom timer for HH:MM:SS (hours:minutes:seconds)
 function CustomCountdownTimer({ targetDate, onEnd }: { targetDate: Date, onEnd?: () => void }) {
@@ -88,7 +89,6 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
   const fetchOrder = async (id: string, setLiveOrder: React.Dispatch<React.SetStateAction<PaymentPageOrder>>) => {
     try {
       const data = await getPaymentPageData(id);
-      setLastRpcResponse?.(data ?? null);
       if (!data) return;
       let payload: any = data;
       if (Array.isArray(payload)) {
@@ -123,6 +123,21 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
   };
   // State for live order status
   const [liveOrder, setLiveOrder] = useState<PaymentPageOrder>(order);
+  const router = useRouter();
+
+  // If the incoming order is not confirmed, redirect to order-history with expected params
+  useEffect(() => {
+    const status = (order?.status ?? '') as string;
+    if (status !== 'confirmed') {
+      const params = new URLSearchParams();
+      const tx = order?.transaction_id ?? order?.order_number ?? order?.id ?? '';
+      if (tx) params.set('transaction_id', String(tx));
+      if (order?.whatsapp) params.set('whatsapp', String(order.whatsapp));
+      router.replace(`/order-history?${params.toString()}`);
+    }
+    // Intentionally run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Subscribe to Supabase Realtime for instant updates
   useEffect(() => {
@@ -140,7 +155,6 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
         },
         (payload) => {
           console.log('[Supabase Realtime] reels_orders payload:', payload);
-          setLastRealtimePayload?.(payload ?? null);
           if (payload.new) {
             setLiveOrder((prev) => ({ ...prev, ...payload.new }));
           }
@@ -168,9 +182,7 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
   }, [liveOrder.payment_deadline, liveOrder.deadline]);
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('payme');
-  const [lastRpcResponse, setLastRpcResponse] = useState<any>(null);
-  const [lastRealtimePayload, setLastRealtimePayload] = useState<any>(null);
-  const [showDebug, setShowDebug] = useState<boolean>(false);
+  
 
   // Use pay_now_groups as the canonical source for payable items grouped by original order number
   const payNowGroups: Record<string, PaymentPageItem[]> = (liveOrder.pay_now_groups ?? {}) as Record<string, PaymentPageItem[]>;
@@ -224,14 +236,7 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
       <div className="min-h-screen bg-[#FFF4E5] flex items-center justify-center p-4">
         <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in duration-500 relative z-[9999]">
           <div className="p-6 md:p-8 space-y-6">
-            <div className="flex justify-end">
-              <button
-                onClick={() => setShowDebug((s) => !s)}
-                className="text-xs text-gray-400 hover:text-gray-600"
-              >
-                {showDebug ? 'Hide debug' : 'Show debug'}
-              </button>
-            </div>
+            
             {/* Check if order is cancelled */}
             {liveOrder.status === 'cancelled' ? (
               <div className="min-h-screen bg-[#FFF4E5] flex items-center justify-center p-4 font-sans">
@@ -502,22 +507,7 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
               </>
             )}
           </div>
-          {showDebug && (
-            <div className="px-6 py-4 border-t bg-gray-50 text-xs font-mono max-h-64 overflow-auto">
-              <details open className="mb-2">
-                <summary className="cursor-pointer text-sm font-medium">RPC Response</summary>
-                <pre className="whitespace-pre-wrap mt-2">{JSON.stringify(lastRpcResponse, null, 2)}</pre>
-              </details>
-              <details className="mb-2">
-                <summary className="cursor-pointer text-sm font-medium">Realtime Payload</summary>
-                <pre className="whitespace-pre-wrap mt-2">{JSON.stringify(lastRealtimePayload, null, 2)}</pre>
-              </details>
-              <details>
-                <summary className="cursor-pointer text-sm font-medium">Live Order (derived)</summary>
-                <pre className="whitespace-pre-wrap mt-2">{JSON.stringify(liveOrder, null, 2)}</pre>
-              </details>
-            </div>
-          )}
+          
 
           <div className="px-6 pb-6">
             <p className="text-[11px] text-gray-400 font-mono text-center">交易編號: {liveOrder.transaction_id || liveOrder.order_number || (liveOrder.id ? liveOrder.id.slice(0, 8) : '')}</p>

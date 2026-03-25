@@ -246,6 +246,20 @@ export interface CustomerOrderHistoryResponse {
   transaction_id?: string | null
 }
 
+/**
+ * Response shape for RPC `get_customer_all_order_history(p_customer_id UUID, p_page INT, p_page_size INT)`
+ */
+export interface CustomerAllOrderHistoryResponse {
+  data: CustomerOrderHistoryEntry[] | CustomerOrderHistoryItem[]
+  metadata?: {
+    per_page?: number
+    total_pages?: number
+    current_page?: number
+    total_results?: number
+  }
+  success?: boolean
+}
+
 // Response shape for RPC `get_single_order_details(p_customer_id UUID, p_reference_id TEXT)`
 export interface SingleOrderLineItem {
   price?: number

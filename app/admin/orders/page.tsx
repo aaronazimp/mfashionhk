@@ -121,15 +121,16 @@ export default function OrdersPage() {
   }, []);
 
   return (
-    <div className="h-screen bg-white text-[#111827] overflow-auto flex flex-col p-4 pt-16 pb-28 max-w-[1000px] mx-auto">
+    <div className="h-screen bg-white text-[#111827] overflow-auto flex flex-col p-4 pt-16 pb-28 w-full">
             <div className="mb-4">
         <HeaderTabMenu active="orders" />
       </div>
 
-      <div className="mb-4 relative">
+      <div className="mb-4">
         <div className="w-full mt-0">
-          <div className="mx-auto w-full max-w-[820px]">
-            <h2 className="text-sm font-bold mb-2">目前有 {countMeta?.total_results ?? (countLoading ? '載入中…' : '0')} 筆訂單需要處理</h2>
+          <div className="mx-auto w-full max-w-[1200px] flex items-start justify-between">
+            <div className="flex-1 pr-4">
+              <h2 className="text-sm font-bold mb-2">目前有 {countMeta?.total_results ?? (countLoading ? '載入中…' : '0')} 筆訂單需要處理</h2>
 
         {/* Waitlist summary (flexible: supports numeric or object-shaped statusCounts entries) */}
         {(() => {
@@ -155,23 +156,29 @@ export default function OrdersPage() {
           const txt = format(w);
           return txt ? <div className="text-xs text-gray-600 mb-4">{txt}</div> : null;
         })()}
-
-        <Chips statusCounts={statusCounts} onOpenCustomer={(id: string, status?: string) => { setModalCustomerId(id); setModalPriorityStatus(status ?? null); setModalOpen(true); }} onOpenBatch={(keys: string[], custIds: string[], status: string | 'all') => {
-          setBatchModalSelectedOrderKeys(keys)
-          setBatchModalCustomerIds(custIds)
-          setBatchModalStatusFilter(status)
-          setBatchModalOpenTop(true)
-        }} />
-          </div>
             </div>
-            <div className="absolute right-4 top-0">
+            <div className="ml-4 flex-shrink-0">
               <Link href="/admin/orders/restock">
                 <Button className="px-3 py-1 bg-primary text-white hover:bg-primary/90 focus-visible:ring-0">
                   切換補貨管理頁
                 </Button>
               </Link>
             </div>
+          </div>
         </div>
+      </div>
+
+      {/* Chips (status chips + customer list) moved out to full-width container so list can span the screen */}
+      <div className="w-full px-4">
+        <div className="mx-auto w-full max-w-[1200px]">
+          <Chips statusCounts={statusCounts} onOpenCustomer={(id: string, status?: string) => { setModalCustomerId(id); setModalPriorityStatus(status ?? null); setModalOpen(true); }} onOpenBatch={(keys: string[], custIds: string[], status: string | 'all') => {
+            setBatchModalSelectedOrderKeys(keys)
+            setBatchModalCustomerIds(custIds)
+            setBatchModalStatusFilter(status)
+            setBatchModalOpenTop(true)
+          }} />
+        </div>
+      </div>
 
 
       

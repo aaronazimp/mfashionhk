@@ -74,7 +74,7 @@ export function HeaderTabMenu({ active }: Props) {
     <div className="relative">
       {/* Mobile full-width top bar */}
       <div className="fixed top-0 left-0 right-0 z-40 md:hidden bg-white h-14">
-        <div className="max-w-6xl mx-auto px-4 flex items-center h-14">
+        <div className="max-w-[1200px] mx-auto px-4 flex items-center h-14">
           <button
             aria-expanded={open}
             aria-controls="header-tab-menu-mobile"
@@ -111,7 +111,7 @@ export function HeaderTabMenu({ active }: Props) {
       <div/>
       {/* Desktop fixed bar (full-width on md+) */}
       <div className="md:fixed md:top-0 md:left-0 md:right-0 md:z-50 md:bg-white/80 md:backdrop-blur-sm">
-        <div className="max-w-6xl mx-auto px-4">
+        <div className="max-w-[1200px] mx-auto px-4">
 
           {/* Desktop: horizontal tabs */}
           <nav className="hidden md:flex overflow-x-auto whitespace-nowrap gap-1 md:gap-2 bg-gray-50 p-1 rounded-lg border border-gray-200 w-auto shadow-sm">
