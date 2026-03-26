@@ -43,6 +43,7 @@ export default function AdminSkusPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [showRemoved, setShowRemoved] = useState(false);
 
   // Fixed SKU types (use same order/icons as upload page)
   const categories = useMemo(() => Object.keys(CATEGORY_ICONS), []);
@@ -55,13 +56,30 @@ export default function AdminSkusPage() {
   const totalItems = metadata?.total_results ?? 0;
   const totalPages = metadata?.total_pages ?? 0;
   const currentItems = items;
+  const displayedItems = useMemo(() => {
+    if (showRemoved) return currentItems;
+    return currentItems.filter((p) => {
+      if (!p.reels_deadline) return true;
+      try {
+        return new Date(p.reels_deadline).getTime() >= Date.now();
+      } catch (e) {
+        return true;
+      }
+    });
+  }, [currentItems, showRemoved]);
 
   // Fetch items when page, filters, or search change
   useEffect(() => {
     setLoading(true);
     (async () => {
       try {
-        const res: ActiveReelsSkusResponse = await getActiveReelsSkus(currentPage, ITEMS_PER_PAGE, selectedCategory ?? 'all', searchTerm);
+        const res: ActiveReelsSkusResponse = await getActiveReelsSkus(
+          !showRemoved,
+          selectedCategory ?? 'all',
+          searchTerm,
+          currentPage,
+          ITEMS_PER_PAGE
+        );
         setItems(res.data ?? []);
         setMetadata(res.metadata ?? null);
       } catch (err) {
@@ -72,7 +90,7 @@ export default function AdminSkusPage() {
         setLoading(false);
       }
     })();
-  }, [currentPage, selectedCategory, searchTerm]);
+  }, [currentPage, selectedCategory, searchTerm, showRemoved]);
 
   const handlePageChange = (page: number) => {
     if (page < 1 || page > totalPages) return;
@@ -153,6 +171,17 @@ export default function AdminSkusPage() {
                 </SelectContent>
               </Select>
 
+              <Button
+                size="sm"
+                onClick={() => setShowRemoved((s) => !s)}
+                className={cn(
+                  "text-xs ml-1",
+                  showRemoved ? "bg-primary text-white" : "bg-white border border-gray-200 text-gray-700"
+                )}
+              >
+                顯示落架商品
+              </Button>
+
               {(searchTerm || selectedCategory) && (
                 <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground">
                   <Lucide.X className="w-4 h-4 mr-1" /> 清除篩選
@@ -161,7 +190,7 @@ export default function AdminSkusPage() {
             </div>
 
             <div className="text-xs text-gray-500">
-              共 {totalItems} 筆結果
+              共 {displayedItems.length} 筆結果
             </div>
           </div>
         </div>
@@ -170,10 +199,10 @@ export default function AdminSkusPage() {
 
         {/* Product List - Grid View */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {currentItems.length === 0 ? (
+          {displayedItems.length === 0 ? (
             <EmptyWidget message="找不到符合的 SKU" className="col-span-full  rounded-lg" />
           ) : (
-            currentItems.map((product) => (
+            displayedItems.map((product) => (
               <Link
                 key={product.id}
                 href={`/admin/skus/${product.id}`}

@@ -363,20 +363,22 @@ export async function searchCustomerHistory(
 }
 
 /**
- * Fetch active reels SKUs with pagination, optional type filter and search query.
- * RPC: get_active_reels_skus(p_page INT, p_per_page INT, p_type_filter TEXT, p_search_query TEXT)
+ * Fetch reels SKUs with pagination, optional type filter and search query.
+ * RPC: get_active_reels_skus(p_is_active BOOLEAN, p_type_filter TEXT DEFAULT 'all', p_search_query TEXT DEFAULT '', p_page INT DEFAULT 1, p_per_page INT DEFAULT 20)
  */
 export async function getActiveReelsSkus(
-  p_page: number = 1,
-  p_per_page: number = 20,
+  p_is_active: boolean = true,
   p_type_filter: string = 'all',
-  p_search_query: string = ''
+  p_search_query: string = '',
+  p_page: number = 1,
+  p_per_page: number = 20
 ): Promise<any> {
   const { data, error } = await supabase.rpc('get_active_reels_skus', {
-    p_page,
-    p_per_page,
+    p_is_active,
     p_type_filter,
     p_search_query,
+    p_page,
+    p_per_page,
   })
 
   if (error) {

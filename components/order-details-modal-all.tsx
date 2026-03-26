@@ -369,7 +369,7 @@ export default function OrderDetailsModal({ open, onOpenChange, customerId, prio
                       <div>
                        
 
-                        <div className="rounded-2xl overflow-hidden shadow-md mx-auto max-w-4xl">
+                        <div className="rounded-2xl overflow-hidden  mx-auto max-w-[400px]">
                           <div className="bg-white rounded-b-2xl p-4 space-y-6 border-t border-gray-100">
                             {(page?.orders || []).map((order) => (
                               <OrderCard key={order.order_number} order={order as any} statusBadge={(s) => <OrderStatusBadge status={s as string} />} />

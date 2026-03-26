@@ -26,7 +26,7 @@ export const ListItem: React.FC<ListItemProps> = ({ id, header, subtitle, left, 
   return (
     <div id={id} className={`w-full bg-white rounded-4xl shadow p-4 cursor-pointer ${className ?? ''}`} onClick={onToggle}>
       <div className="flex items-start justify-between">
-        <div className="flex items-center gap-3">
+        <div className=" flex items-center gap-3">
           {left}
           {header}
         </div>

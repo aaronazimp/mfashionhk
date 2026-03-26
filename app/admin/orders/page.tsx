@@ -721,8 +721,8 @@ function CustomerList({ statusFilter, page, perPage, onPageChange, onOpenCustome
           const header = (
             <>
               <div>
-                <div className="text-md font-bold">{cust.customer_name || '—'} | {cust.phone}</div>
-                <div className="text-xs text-gray-500">
+                <div className="text-sm font-bold">{cust.customer_name || '—'} | {cust.phone}</div>
+                <div className="text-[10px] text-gray-500">
                  
                   {((cust.matching_action_count ?? null) !== null) && (
                     <span className="ml-2">{cust.matching_action_count} 張訂單</span>
@@ -791,7 +791,7 @@ function CustomerList({ statusFilter, page, perPage, onPageChange, onOpenCustome
                       <div key={tx + '_' + idx2} onClick={(e) => { e.stopPropagation(); if (cust.customer_id) onOpenCustomer(cust.customer_id); }} className={`flex items-center justify-between px-4 py-3 rounded-full ${bg} cursor-pointer hover:bg-gray-50`}>
                         <div className="flex flex-col">
                           <div className="text-xs text-gray-500">交易號碼</div>
-                          <div className="font-semibold">{tx}</div>
+                          <div className=" font-semibold">{tx}</div>
                          
                         </div>
                         <div className="text-xs">{label}</div>
@@ -809,7 +809,7 @@ function CustomerList({ statusFilter, page, perPage, onPageChange, onOpenCustome
                         <div className="text-[9px] text-gray-500 mb-1">交易號碼</div>
                         <div className="pl-2 text-sm text-black font-semibold">{o.order_number}</div>
                       </div>
-                      <div className="text-sm">{label}</div>
+                      <div className="text-xs">{label}</div>
                     </div>
                   );
                 })
