@@ -293,7 +293,7 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
                         <h4 className="text-sm font-medium text-[#6b7280] mb-3 text-center">項目明細</h4>
                         {Object.keys(payNowGroups).length > 0 ? (
                           Object.entries(payNowGroups).map(([origOrderNumber, items]) => (
-                            <div key={origOrderNumber} className="mb-3">
+                            <div key={origOrderNumber} className="mb-3 flex justify-center">
                               <OrderCard
                                 order={{
                                   order_number: origOrderNumber,
@@ -302,7 +302,7 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
                                     thumbnail: it.thumbnail ?? it.image_url ?? it.sku_img_url ?? it.imageUrl ?? null,
                                   })),
                                 }}
-                                className="bg-white rounded-lg shadow-md overflow-hidden"
+                                className="bg-white rounded-lg shadow-md overflow-hidden w-full max-w-md"
                               />
                             </div>
                           ))
