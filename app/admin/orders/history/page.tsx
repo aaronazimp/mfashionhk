@@ -234,11 +234,16 @@ export default function OrdersHistoryPage() {
                                   className={`flex items-center justify-between py-2 px-4 text-sm cursor-pointer ${bg} rounded-full`}
                                   onClick={(e) => { e.stopPropagation(); setModalCustomerId(cust.customer_id ?? null); setModalReferenceId(g.group_id ?? null); setModalOpen(true) }}
                                 >
-                                  <div className="flex flex-col">
-                                    <div className="text-[9px] text-gray-500">交易號碼</div>
-                                    <div className="text-sm font-semibold text-black">{g.group_id}</div>
-                                  </div>
-                                  <div className="text-sm text-gray-700">{ListStatusLabel[statusKey] || statusKey}</div>
+                                      <div className="flex flex-col">
+                                        <div className="text-[9px] text-gray-500">交易號碼</div>
+                                        <div className="text-sm font-semibold text-black">{g.group_id}</div>
+                                      </div>
+                                    <div className="flex items-center gap-2">
+                                      {g.is_customer_created && (
+                                        <div className="text-[10px] text-white bg-gray-500 px-2 py-0.5 rounded-full">顧客建立訂單</div>
+                                      )}
+                                      <div className="text-sm text-gray-700">{ListStatusLabel[statusKey] || statusKey}</div>
+                                    </div>
                                 </div>
                               )
                             })}

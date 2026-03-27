@@ -73,6 +73,7 @@ export interface TimelineGroup {
   group_total?: number | null
   shipment_id?: string | null
   group_id_type?: string | null
+  is_customer_created?: boolean
 }
 
 export interface SearchCustomerHistoryResponse {
@@ -107,6 +108,46 @@ export interface ActiveCustomerRecords {
     orders: OrderGroup[]
     status_total: number
   }>
+}
+
+// Pagination metadata used by multiple RPC responses
+export interface PaginationMetadata {
+  per_page?: number
+  total_pages?: number
+  current_page?: number
+  result_range?: string
+  total_results?: number
+  total_customers?: number
+}
+
+// Shape of a single master-order list row returned by `get_master_order_list` RPC
+export interface MasterOrderItem {
+  order_number?: string
+  status?: string | null
+  transaction_id?: string | null
+  order_total?: number | null
+  payment_deadline?: string | null
+  is_customer_created?: boolean
+  [key: string]: any
+}
+
+export interface MasterOrderRow {
+  customer_id?: string | null
+  phone?: string | null
+  customer_name?: string | null
+  // RPC sometimes returns `items`; we normalise them into `orders`
+  items?: MasterOrderItem[]
+  orders?: MasterOrderItem[]
+  matching_action_count?: number | null
+  matching_order_count?: number | null
+  [key: string]: any
+}
+
+// Normalised response from `get_master_order_list`
+export interface MasterOrderListResponse {
+  data: MasterOrderRow[]
+  metadata?: PaginationMetadata
+  status_counts?: Record<string, number>
 }
 
 // Backwards-compat alias (updated name preferred)
