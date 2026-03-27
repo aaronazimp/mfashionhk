@@ -1,7 +1,7 @@
 // src/services/orderService.ts
 import { supabase } from '@/lib/supabase'; // Adjust this path to your Supabase client
 
-import type { OrderLineItem, OrderGroup, ActiveCustomerRecords, CustomerOrderHistoryResponse } from '@/types/order'
+import type { OrderLineItem, OrderGroup, ActiveCustomerRecords, CustomerOrderHistoryResponse, MasterOrderRow, MasterOrderListResponse, PaginationMetadata, MasterOrderItem } from '@/types/order'
 import type { CustomerOrdersResponse } from '@/types/orders'
 import type { SingleSkuDetails } from '@/lib/products'
 
@@ -546,7 +546,7 @@ export async function getMasterOrderList(
   p_page: number = 1,
   p_per_page: number = 20,
   p_urgent_only: boolean = false
-): Promise<{ rows: any[]; metadata: any | null; statusCounts: Record<string, number> | null }> {
+): Promise<{ rows: MasterOrderRow[]; metadata: PaginationMetadata | null; statusCounts: Record<string, number> | null }> {
   const { data: rpcData, error } = await supabase.rpc('get_master_order_list', {
     p_status_filter,
     p_page,
@@ -559,8 +559,8 @@ export async function getMasterOrderList(
     throw new Error(error.message);
   }
 
-  const normalizeEntry = (c: any) => {
-    const orders = Array.isArray(c.items) ? c.items : [];
+  const normalizeEntry = (c: MasterOrderRow): MasterOrderRow => {
+    const orders: MasterOrderItem[] = Array.isArray(c.items) ? (c.items as MasterOrderItem[]) : (Array.isArray(c.orders) ? (c.orders as MasterOrderItem[]) : []);
     return {
       ...c,
       orders,
@@ -572,11 +572,11 @@ export async function getMasterOrderList(
   let m: any = null;
   let sc: Record<string, number> | null = null;
 
-  if (rpcData && Array.isArray((rpcData as any).data)) {
-    const raw = (rpcData as any).data;
+  if (rpcData && Array.isArray((rpcData as MasterOrderListResponse).data)) {
+    const raw = (rpcData as MasterOrderListResponse).data;
     rows = Array.isArray(raw) ? raw.map(normalizeEntry) : [];
-    m = (rpcData as any).metadata ?? null;
-    sc = (rpcData as any).status_counts ?? null;
+    m = (rpcData as MasterOrderListResponse).metadata ?? null;
+    sc = (rpcData as MasterOrderListResponse).status_counts ?? null;
   } else {
     rows = [];
     m = null;

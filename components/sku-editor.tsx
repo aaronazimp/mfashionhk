@@ -771,7 +771,9 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
                  <Label htmlFor="price" className="text-xs">售價 (HK$)</Label>
                  <Input 
                   id="price" 
-                  type="number" 
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={product.price} 
                   onChange={e => handleChange('price', e.target.value)}
                   className="block w-full rounded-md border-gray-200 p-2 bg-white text-xs"
@@ -1079,7 +1081,7 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-3">
                     <Label className="text-xs">尺碼</Label>
-                    <Input value={v.size || ''} onChange={e => updateVariationField(vi, 'size', e.target.value)} className="text-sm w-36" />
+                    <Input value={v.size || ''} onChange={e => updateVariationField(vi, 'size', e.target.value)} className="text-xs w-36" />
                   </div>
                   <div className="flex items-center gap-2">
                     <Button variant="ghost" size="icon" onClick={() => requestRemoveVariation(vi)}>
@@ -1095,9 +1097,10 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
                         <Input
                           value={String(v.chest ?? '')}
                           onChange={e => updateVariationField(vi, 'chest', Number(e.target.value))}
-                          
-                          type="number"
-                          className="text-xs w-10"
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          className="text-xs w-12"
                         />
                       </div>
                       <div className="flex flex-col">
@@ -1105,9 +1108,10 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
                         <Input
                           value={String(v.waist ?? '')}
                           onChange={e => updateVariationField(vi, 'waist', Number(e.target.value))}
-                         
-                          type="number"
-                          className="text-xs w-10"
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          className="text-xs w-12"
                         />
                       </div>
                       <div className="flex flex-col">
@@ -1115,9 +1119,10 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
                         <Input
                           value={String(v.length ?? '')}
                           onChange={e => updateVariationField(vi, 'length', Number(e.target.value))}
-                         
-                          type="number"
-                          className="text-xs w-10"
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          className="text-xs w-12"
                         />
                       </div>
                       <div className="flex flex-col">
@@ -1125,9 +1130,10 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
                         <Input
                           value={String(v.hip ?? '')}
                           onChange={e => updateVariationField(vi, 'hip', Number(e.target.value))}
-                          
-                          type="number"
-                          className="text-xs w-10"
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          className="text-xs w-12"
                         />
                       </div>
                     </div>
@@ -1142,11 +1148,11 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
                       </div>
                       <div className="flex flex-col">
                         <div className="text-[9px] text-gray-500 mb-1">庫存</div>
-                        <Input value={String(c.stock ?? '')} onChange={e => updateColorField(vi, ci, 'stock', Number(e.target.value))} placeholder="庫存" type="number" className="text-xs w-20" />
+                        <Input value={String(c.stock ?? '')} onChange={e => updateColorField(vi, ci, 'stock', Number(e.target.value))} placeholder="庫存" type="text" inputMode="numeric" pattern="[0-9]*" className="text-xs w-20" />
                       </div>
                       <div className="flex flex-col">
                         <div className="text-[9px] text-gray-500 mb-1">配額</div>
-                        <Input value={String(c.reels_quota ?? '')} onChange={e => updateColorField(vi, ci, 'reels_quota', Number(e.target.value))} placeholder="配額" type="number" className="text-xs w-20" />
+                        <Input value={String(c.reels_quota ?? '')} onChange={e => updateColorField(vi, ci, 'reels_quota', Number(e.target.value))} placeholder="配額" type="text" inputMode="numeric" pattern="[0-9]*" className="text-xs w-20" />
                       </div>
                       
                     </div>

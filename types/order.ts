@@ -193,6 +193,7 @@ export interface ActiveReelsSkuItem {
   shipping_surcharge: number | null
   is_discount_eligible: boolean
   [key: string]: any
+  madeinkorea: boolean
 }
 
 export interface ActiveReelsSkusResponse {

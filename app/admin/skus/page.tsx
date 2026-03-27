@@ -134,7 +134,7 @@ export default function AdminSkusPage() {
              <div className="relative flex-1">
                 <Lucide.Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
                 <Input
-                    placeholder="搜尋 SKU 或名稱..."
+                    placeholder="搜尋商品名稱..."
                     className="pl-9 bg-white border-gray-200 text-xs"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
@@ -235,6 +235,9 @@ export default function AdminSkusPage() {
                             )}
                             {product.is_upsell_item && (
                               <span className="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded">加購商品</span>
+                            )}
+                            {product.madeinkorea && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-800 font-medium">韓國制</span>
                             )}
                         </div>
                         <h3 className="font-semibold text-sm text-[#111827] w-[180px] sm:w-[200px]">

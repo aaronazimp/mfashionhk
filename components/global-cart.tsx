@@ -334,18 +334,18 @@ export function GlobalCart() {
                 <SheetContent side="right" className="w-full sm:w-[540px] flex flex-col h-full px-4 sm:px-6 bg-white">
                     <SheetHeader>
                         <SheetTitle>
-                            <span className="flex items-center gap-2">
+                            <span className="flex items-center gap-2 text-sm">
                                 <Lucide.ShoppingCart className="w-5 h-5 text-[color:var(--color-primary)]" />
                                 購物車
                             </span>
                         </SheetTitle>
-                        <SheetDescription>
+                        <SheetDescription className="text-xs text-center">
                             {isSubmitted ? "訂單已提交" : "請填寫聯絡資料以完成訂單"}
                         </SheetDescription>
-                        {/* Per-item timers shown next to each item */}
+                      
                     </SheetHeader>
 
-                    <div className="flex-1 overflow-y-auto py-6 px-2 sm:px-0 space-y-6">
+                    <div className="flex-1 overflow-y-auto pt-2 pb-6 px-2 sm:px-0 space-y-6">
                         {isSubmitted ? (
                             <div className="bg-green-50 border border-green-200 rounded-xl p-8 text-center space-y-3">
                                 <Lucide.CheckCircle2 className="w-12 h-12 text-green-500 mx-auto" />
@@ -366,11 +366,11 @@ export function GlobalCart() {
                                         {/* Upsell Section */}
                                         {upsellItems.length > 0 && (
                                             <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-xl relative">
-                                                <div className="flex items-center gap-2 font-bold text-lg mb-2 text-yellow-800">
+                                                <div className="flex items-center gap-2 font-bold text-sm mb-2 text-yellow-800">
                                               
                                                     加購優惠
                                                 </div>
-                                                <div className="mb-3 text-sm font-semibold text-yellow-700 text-center flex items-center gap-2 justify-center">
+                                                <div className="mb-3 text-xs font-semibold text-yellow-700 text-center flex items-center gap-2 justify-center">
                                                      <Lucide.Gift className="w-4 h-4 text-yellow-600" />
                                                     買多1件全單減$5，買多2件減$10! 優惠無上限!!
                                                 </div>
@@ -402,12 +402,12 @@ export function GlobalCart() {
                                                                         )}
                                                                     </div>
                                                                     <div className="w-full flex flex-col items-center">
-                                                                        <div className="font-bold text-sm mb-1 text-yellow-900 text-center w-full">{upsell.SKU}</div>
-                                                                        <div className="text-yellow-700 font-bold mb-2 text-center w-full">HKD ${upsell.regular_price}</div>
+                                                                        <div className="font-bold text-xs mb-1 text-yellow-900 text-center w-full">{upsell.SKU}</div>
+                                                                        <div className="text-yellow-700 font-bold mb-2 text-center w-full text-xs">HKD ${upsell.regular_price}</div>
                                                                     </div>
                                                                     <Button
                                                                         size="sm"
-                                                                        className="bg-yellow-400 text-yellow-900 hover:bg-yellow-500 font-bold w-full mt-1 text-center"
+                                                                        className="bg-yellow-400 text-yellow-900 hover:bg-yellow-500 w-full mt-1 text-center text-xs"
                                                                         disabled={addingUpsellId === upsell.id}
                                                                         onClick={(e) => {
                                                                             e.stopPropagation();
@@ -443,7 +443,7 @@ export function GlobalCart() {
                                                 <div className="flex-1">
                                                     <div className="flex justify-between items-start">
                                                         <div className="flex items-center gap-2">
-                                                            <div className="font-bold text-sm">{(item as any).SKU}</div>
+                                                            <div className="font-bold text-xs">{(item as any).SKU}</div>
                                                             {(() => {
                                                                 const text = (item as any).status === 'reserved'
                                                                     ? '現貨'
@@ -466,16 +466,16 @@ export function GlobalCart() {
                                                             <Lucide.X className="w-4 h-4" />
                                                         </button>
                                                     </div>
-                                                    <div className="text-sm text-zinc-500 mt-1">{(item as any).color} / {(item as any).size}</div>
+                                                    <div className="text-xs text-zinc-500 mt-1">{(item as any).color} / {(item as any).size}</div>
                                                     <div className="flex justify-between items-center mt-2">
-                                                        <div className="font-bold text-[color:var(--color-primary)]">HKD ${(item as any).regular_price}</div>
-                                                        <div className="text-sm text-zinc-500">x {(item as any).quantity}</div>
+                                                        <div className="text-xs text-[color:var(--color-primary)]">HKD ${(item as any).regular_price}</div>
+                                                        <div className="text-xs text-zinc-500">x {(item as any).quantity}</div>
                                                     </div>
 
                                                     {(item as any).expires_at && (
                                                         <div className="mt-2 inline-flex flex-col items-start gap-1">
                                                             <div className="text-xs text-red-500">庫存保留倒數</div>
-                                                            <div className="text-red-700 bg-red-50 px-2 py-0.5 rounded-md font-mono text-sm animate-pulse">
+                                                            <div className="text-red-700 bg-red-50 px-2 py-0.5 rounded-md font-mono text-xs animate-pulse">
                                                                 {(() => {
                                                                     const raw = itemTimers[String((item as any).cart_item_id ?? (item as any).id)];
                                                                     if (!raw) return "--:--";
@@ -489,7 +489,7 @@ export function GlobalCart() {
                                             </div>
                                         ))}
 
-                                        <div className="border-t pt-4 flex justify-between items-center font-bold text-lg">
+                                        <div className="border-t pt-4 flex justify-between items-center font-bold text-md">
                                             <span>總金額</span>
                                             <span className="text-[color:var(--color-primary)]">HKD ${totalAmount}</span>
                                         </div>
@@ -497,17 +497,18 @@ export function GlobalCart() {
                                 )}
 
                                 {cartItems.length > 0 && (
-                                    <form id="checkout-form" onSubmit={handleCheckout} noValidate className="space-y-4 mt-8 border-t pt-6">
-                                        <h3 className="font-bold mb-2 flex items-center gap-2">
+                                    <form id="checkout-form" onSubmit={handleCheckout} noValidate className="space-y-4 mt-8 border-t pt-6 text-[9px]">
+                                        <h3 className="text-xs font-bold mb-4 flex items-center gap-2">
                                             
                                             聯絡資料
                                         </h3>
                                         <div className="space-y-2">
-                                            <Label htmlFor="checkout-name" className="flex items-center gap-1">
+                                            <Label htmlFor="checkout-name" className="!text-xs flex items-center gap-1">
                                                  <Lucide.User className="w-4 h-4 text-blue-400" />
                                                 稱呼
                                             </Label>
                                             <Input
+                                                className="!text-xs"
                                                 id="checkout-name"
                                                 placeholder="請輸入您的稱呼"
                                                 value={customerInfo.name}
@@ -517,11 +518,12 @@ export function GlobalCart() {
                                         </div>
 
                                         <div className="space-y-2">
-                                            <Label htmlFor="checkout-whatsapp" className="flex items-center gap-1">
+                                            <Label htmlFor="checkout-whatsapp" className="!text-xs flex items-center gap-1">
                                                  <Lucide.Phone className="w-4 h-4 text-green-500" />
-                                                WhatsApp聯絡
+                                                WhatsApp號碼
                                             </Label>
                                             <Input
+                                                className="!text-xs"
                                                 id="checkout-whatsapp"
                                                 type="tel"
                                                 inputMode="numeric"
@@ -535,11 +537,12 @@ export function GlobalCart() {
                                         </div>
 
                                         <div className="space-y-2">
-                                            <Label htmlFor="checkout-address" className="flex items-center gap-1">
+                                            <Label htmlFor="checkout-address" className="!text-xs flex items-center gap-1">
                                                  <Lucide.MapPin className="w-4 h-4 text-zinc-700" />
                                                 地址
                                             </Label>
                                             <Input
+                                                className="!text-xs"
                                                 id="checkout-address"
                                                 placeholder="收件地址 / 送貨地址"
                                                 value={customerInfo.address}

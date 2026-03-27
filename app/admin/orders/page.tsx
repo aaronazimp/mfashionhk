@@ -100,9 +100,17 @@ export default function OrdersPage() {
       })
 
       try {
-        channel.subscribe((status: any) => {
-          console.log('reels-order-listener subscribe callback', status);
-        });
+        (async () => {
+          try {
+            const res = await channel.subscribe();
+            console.log('reels-order-listener subscribe result', res);
+            if ((res as any)?.error) {
+              console.error('reels-order-listener subscribe error', (res as any).error);
+            }
+          } catch (err) {
+            console.error('reels-order-listener subscribe threw', err);
+          }
+        })();
       } catch (err) {
         console.error('reels-order-listener subscribe error', err);
       }
@@ -159,7 +167,7 @@ export default function OrdersPage() {
             </div>
             <div className="ml-4 flex-shrink-0">
               <Link href="/admin/orders/restock">
-                <Button className="px-3 py-1 bg-primary text-white hover:bg-primary/90 focus-visible:ring-0">
+                <Button className="text-xs px-3 py-1 bg-primary text-white hover:bg-primary/90 focus-visible:ring-0">
                   切換補貨管理頁
                 </Button>
               </Link>
@@ -298,7 +306,7 @@ function Chips({ statusCounts, onOpenCustomer, onOpenBatch }: { statusCounts?: R
           >
             <span>{c.label}</span>
             {typeof count === 'number' && count > 0 && (
-              <Badge className={`absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center text-xs p-0 shadow ${active ? 'bg-red-600 text-white' : 'bg-red-600 text-white'}`}>{display}</Badge>
+              <Badge className={`absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-[10px] p-0 shadow ${active ? 'bg-red-600 text-white' : 'bg-red-600 text-white'}`}>{display}</Badge>
             )}
           </button>
         );
@@ -649,7 +657,7 @@ function CustomerList({ statusFilter, page, perPage, onPageChange, onOpenCustome
           {statusFilter === 'confirmed' && (
             <button
               onClick={(e) => { e.stopPropagation(); setShowUnder4Only((s) => !s); }}
-              className={`px-2 py-2 rounded-full text-xs ${showUnder4Only ? 'bg-primary text-white' : 'bg-gray-100 text-gray-700'}`}
+              className={`w-46 px-2 py-2 rounded-full text-xs ${showUnder4Only ? 'bg-primary text-white' : 'bg-gray-100 text-gray-700'}`}
             >
               顯示付款期限小於4小時的訂單
             </button>
@@ -673,7 +681,7 @@ function CustomerList({ statusFilter, page, perPage, onPageChange, onOpenCustome
                   setSelectedOrders(newSel);
                 }
               }}
-              className="text-sm text-gray-700"
+              className="text-xs text-gray-700"
             >
               全部選取
             </button>
@@ -685,7 +693,7 @@ function CustomerList({ statusFilter, page, perPage, onPageChange, onOpenCustome
 
 
       {/* list */}
-      <List className="w-full space-y-4">
+      <List className="w-full space-y-4 max-w-[500px] mx-auto">
         {filteredRows.length === 0 ? (
           <EmptyWidget className="mt-4" />
         ) : filteredRows.map((cust: any) => {
@@ -762,7 +770,7 @@ function CustomerList({ statusFilter, page, perPage, onPageChange, onOpenCustome
           const right = (
             <>
               {actionLabel && (
-                <Button className="px-2 py-1 text-xs" onClick={(e) => { e.stopPropagation(); handleCustomerAction(cust); }}>
+                <Button className="px-2 h-6 text-xs rounded-lg" onClick={(e) => { e.stopPropagation(); handleCustomerAction(cust); }}>
                   {actionLabel}
                 </Button>
               )}
@@ -790,11 +798,16 @@ function CustomerList({ statusFilter, page, perPage, onPageChange, onOpenCustome
                     return (
                       <div key={tx + '_' + idx2} onClick={(e) => { e.stopPropagation(); if (cust.customer_id) onOpenCustomer(cust.customer_id); }} className={`flex items-center justify-between px-4 py-3 rounded-full ${bg} cursor-pointer hover:bg-gray-50`}>
                         <div className="flex flex-col">
-                          <div className="text-xs text-gray-500">交易號碼</div>
+                          <div className="text-[10px] text-gray-500">交易號碼</div>
                           <div className=" font-semibold">{tx}</div>
                          
                         </div>
-                        <div className="text-xs">{label}</div>
+                        <div className="flex items-center gap-2">
+                          {(orders || []).some((it: any) => it.is_customer_created) ? (
+                            <div className="text-[10px] text-black bg-gray-200 inline-block px-2 py-0.5 rounded-full">顧客建立訂單</div>
+                          ) : null}
+                          <div className="text-[10px]">{label}</div>
+                        </div>
                       </div>
                     )
                   })
@@ -808,6 +821,9 @@ function CustomerList({ statusFilter, page, perPage, onPageChange, onOpenCustome
                       <div className="flex flex-col">
                         <div className="text-[9px] text-gray-500 mb-1">交易號碼</div>
                         <div className="pl-2 text-sm text-black font-semibold">{o.order_number}</div>
+                        {o.is_customer_created ? (
+                          <div className="pl-2 mt-1 text-[10px] text-black bg-gray-200 inline-block px-2 py-0.5 rounded-full">顧客建立訂單</div>
+                        ) : null}
                       </div>
                       <div className="text-xs">{label}</div>
                     </div>
