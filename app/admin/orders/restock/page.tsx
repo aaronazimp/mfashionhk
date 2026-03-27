@@ -154,7 +154,7 @@ export default function RestockPage() {
             className="text-xs flex-1 min-w-0 border rounded-full py-2 px-4 bg-white shadow-sm focus:outline-none"
           />
           <Link href="/admin/orders">
-            <Button className="h-8 whitespace-nowrap text-xs ">切換訂單管理頁</Button>
+            <Button className="h-6 w-24 whitespace-nowrap text-xs ">切換訂單管理頁</Button>
           </Link>
         </div>
 

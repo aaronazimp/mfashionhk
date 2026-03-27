@@ -314,15 +314,15 @@ export default function OrderDetailsModal({ open, onOpenChange, customerId, prio
                 const page = pages?.[currentIndex]
                 const txSet = new Set((page?.orders || []).map((o) => (o as any).transaction_id).filter(Boolean))
                 const txDisplay = txSet.size === 1 ? Array.from(txSet)[0] : undefined
-                return txDisplay ? (<div className="text-md text-black font-bold mb-2">交易編號: {txDisplay}</div>) : null
+                return txDisplay ? (<div className="text-sm text-black font-bold mb-2">交易編號: {txDisplay}</div>) : null
               })()}
-              <div className="text-md font-bold">顧客: {payload?.customer_name}</div>
+              <div className="text-sm font-bold">顧客: {payload?.customer_name}</div>
             </div>
             <div className="text-sm text-gray-700">聯絡電話: {payload?.whatsapp}</div>
           </div>
           <div className="mt-3 flex items-center justify-between gap-4">
             <div className="text-xs font-medium">共 {payload?.total_orders_count} 張訂單 | {payload?.grand_total_items} 件商品需要處理</div>
-            <div className="font-semibold">總額: ${payload?.grand_total_amount}</div>
+            <div className="font-semibold text-sm">總額: ${payload?.grand_total_amount}</div>
           </div>
           <div className="mt-3">
             <div className="flex items-center gap-2 overflow-x-auto">
@@ -369,8 +369,8 @@ export default function OrderDetailsModal({ open, onOpenChange, customerId, prio
                       <div>
                        
 
-                        <div className="rounded-2xl overflow-hidden  mx-auto max-w-[400px]">
-                          <div className="bg-white rounded-b-2xl p-4 space-y-6 border-t border-gray-100">
+                        <div className="rounded-2xl overflow-hidden  max-w-[400px]">
+                          <div className="bg-white mb-4 ">
                             {(page?.orders || []).map((order) => (
                               <OrderCard key={order.order_number} order={order as any} statusBadge={(s) => <OrderStatusBadge status={s as string} />} />
                             ))}

@@ -167,7 +167,7 @@ export default function OrdersPage() {
             </div>
             <div className="ml-4 flex-shrink-0">
               <Link href="/admin/orders/restock">
-                <Button className="text-xs px-3 py-1 bg-primary text-white hover:bg-primary/90 focus-visible:ring-0">
+                <Button className="text-xs  h-6 w-24 bg-primary text-white hover:bg-primary/90 focus-visible:ring-0">
                   切換補貨管理頁
                 </Button>
               </Link>

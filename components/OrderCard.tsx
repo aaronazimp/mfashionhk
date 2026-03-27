@@ -616,7 +616,7 @@ export default function OrderCard({ order, className = '', compact = false, stat
   })
 
   return (
-    <div className={`w-[325px] relative rounded-2xl overflow-hidden shadow-sm mx-auto self-start ${className}`}>
+    <div className={`w-[300px] relative rounded-2xl overflow-hidden shadow-sm mx-auto self-start ${className}`}>
       {hasShippedUI ? (
         <div className="absolute inset-0 z-40 flex items-center justify-center pointer-events-none">
           {/* backdrop covers the entire card */}
@@ -632,7 +632,7 @@ export default function OrderCard({ order, className = '', compact = false, stat
           </div>
         </div>
       ) : null}
-      {order.order_number ? <div className="bg-primary text-center text-xs text-white py-2">訂單# {order.order_number}</div> : null}
+      {order.order_number ? <div className="bg-primary text-center text-[10px] text-white py-2">訂單# {order.order_number}</div> : null}
       <div className="bg-white p-4 space-y-4 border-t border-gray-100 max-h-96 overflow-y-auto">
           {(items || []).map((it, idx) => {
           const isLast = idx === (items || []).length - 1
