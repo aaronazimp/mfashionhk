@@ -27,11 +27,13 @@ import {
     CarouselNext,
 } from "@/components/ui/carousel";
 import { useToast } from "@/hooks/use-toast";
+import ProductDrawer from '@/components/ProductDrawer';
 
 // Using RPC types from lib/products.ts
 
 export function GlobalCart() {
     const router = useRouter();
+    const carouselOptions: any = React.useMemo(() => ({ align: 'start', containScroll: 'trimSnaps', loop: false }), []);
   const [isOpen, setIsOpen] = useState(false);
   const [sessionToken, setSessionToken] = useState("");
     const [cartItems, setCartItems] = useState<CartRpcItem[]>([]);
@@ -42,14 +44,17 @@ export function GlobalCart() {
     // Upsell state
     const [upsellItems, setUpsellItems] = useState<UpsellRpcItem[]>([]);
     const [addingUpsellId, setAddingUpsellId] = useState<number | string | null>(null);
+    // Product drawer state for upsell preview
+    const [drawerOpen, setDrawerOpen] = useState(false);
+    const [drawerId, setDrawerId] = useState<string | null>(null);
 
   
-    // New state to control button visibility (default to visible so button appears site-wide)
-    const [isVisible, setIsVisible] = useState(true);
+    // (removed floating button visibility state)
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
     const [itemTimers, setItemTimers] = useState<Record<string, string>>({});
     const timerRef = useRef<number | null>(null);
+    const expiredReportedRef = useRef<Set<string>>(new Set());
 
   const { toast } = useToast();
 
@@ -93,6 +98,8 @@ export function GlobalCart() {
 
             // If no items have expires_at, nothing to do
             const itemsWithExpiry = cartItems.filter((it: any) => it.expires_at);
+            // Reset reported-expired set whenever the watched items list changes
+            expiredReportedRef.current.clear();
         if (itemsWithExpiry.length === 0) {
             setItemTimers({});
             return;
@@ -111,10 +118,14 @@ export function GlobalCart() {
                     return;
                 }
                 const diff = exp - now;
-                if (diff <= 0) {
-                    newTimers[id] = "0000";
-                    anyExpired = true;
-                } else {
+                                if (diff <= 0) {
+                                        newTimers[id] = "0000";
+                                        // Only treat as an "expiration event" the first time it becomes expired
+                                        if (!expiredReportedRef.current.has(id)) {
+                                            anyExpired = true;
+                                            expiredReportedRef.current.add(id);
+                                        }
+                                } else {
                     const mm = Math.floor(diff / 60000);
                     const ss = Math.floor((diff % 60000) / 1000);
                     const mmStr = String(mm).padStart(2, "0");
@@ -172,16 +183,18 @@ export function GlobalCart() {
                 if (!data) {
                     setCartItems([]);
                     setUpsellItems([]);
-                    setIsVisible(false);
                     return;
                 }
                 // Use RPC items directly
                 const cartItemsRaw: CartRpcItem[] = data.cart_items || [];
                 setCartItems(cartItemsRaw);
-                setIsVisible((cartItemsRaw.length ?? 0) > 0);
+                // Notify other UI (immersive feed) about cart count
+                try { window.dispatchEvent(new CustomEvent('cart-updated', { detail: { count: (cartItemsRaw || []).length } })); } catch {}
 
                 const upsells: UpsellRpcItem[] = data.upsell_items || [];
-                setUpsellItems(upsells);
+                // Sort upsells by ID to ensure stable order across refetches
+                const sortedUpsells = [...upsells].sort((a, b) => String(a.id).localeCompare(String(b.id)));
+                setUpsellItems(sortedUpsells);
 
                 // Prefer explicit customer_profile from RPC if available
                 const cp: CustomerProfileRpc | undefined = data.customer_profile ?? undefined;
@@ -192,37 +205,16 @@ export function GlobalCart() {
                 console.error('Cart fetch error:', err);
                 setCartItems([]);
                 setUpsellItems([]);
-                setIsVisible(false);
             } finally {
                 setLoading(false);
             }
         })();
     }, [sessionToken, refreshTrigger, isOpen]);
-    // Add upsell item to cart
+    // Add upsell item to cart (server-side insertion removed)
+    // Keep UI: open the product drawer for the upsell so user can preview/confirm
     const handleAddUpsell = async (upsell: UpsellRpcItem) => {
-        if (!sessionToken) return;
-        setAddingUpsellId(upsell.id);
-        try {
-            // Insert a new cart item for this SKU (quantity 1, status 'reserved' by default)
-            // You may need to adjust the insert fields to match your schema
-            const { error } = await supabase.from('reels_orders_cart_items').insert({
-                session_id: sessionToken || null, // Use sessionToken from state
-                SKU: upsell.SKU,
-                quantity: 1,
-                status: 'reserved',
-                // You may need to set SKU_details_id or similar if required by schema
-            });
-            if (error) {
-                toast({ title: '加購失敗', description: error.message, variant: 'destructive' });
-            } else {
-                setRefreshTrigger((p) => p + 1);
-                toast({ title: '已加入購物車', description: upsell.SKU });
-            }
-        } catch (e: any) {
-            toast({ title: '加購失敗', description: e.message, variant: 'destructive' });
-        } finally {
-            setAddingUpsellId(null);
-        }
+        setDrawerId(String(upsell.id));
+        setDrawerOpen(true);
     };
 
     const totalAmount = cartItems.reduce((sum, item) => sum + ((Number(item.regular_price) || 0) * (Number(item.quantity) || 0)), 0);
@@ -269,7 +261,6 @@ export function GlobalCart() {
 
             setIsSubmitted(true);
             setCartItems([]);
-            setIsVisible(false);
             setIsOpen(false);
 
             if (redirectHint === 'payment' && transactionId) {
@@ -287,7 +278,7 @@ export function GlobalCart() {
 
         setIsSubmitted(true);
         setCartItems([]);
-        setIsVisible(false);
+        try { window.dispatchEvent(new CustomEvent('cart-updated', { detail: { count: 0 } })); } catch {}
         // Refresh token logic? Usually session persists but items are gone.
     } catch (err: any) {
         toast({ title: "錯誤", description: err.message || "結帳失敗", variant: "destructive" });
@@ -305,37 +296,22 @@ export function GlobalCart() {
           toast({ title: "刪除失敗", variant: "destructive" });
           setRefreshTrigger(prev => prev + 1); // Revert/Reload
       } else {
-          // If empty, hide button
-          if (cartItems.length <= 1) setIsVisible(false);
+          // If empty, notify UI via event (no floating button to hide)
+          try { window.dispatchEvent(new CustomEvent('cart-updated', { detail: { count: Math.max(0, (cartItems.length || 0) - 1) } })); } catch {}
       }
   };
 
-  if (!isVisible && !isOpen) return null;
+    // Component remains mounted so it can respond to `open-cart` events.
 
     return (
         <>
-            {!isOpen && isVisible && (
-                <button
-                    onClick={() => setIsOpen(true)}
-                    className="fixed top-1/2 right-0 z-[99999] pointer-events-auto bg-[color:var(--color-primary)] text-[color:var(--color-primary-foreground)] p-3 pr-4 rounded-l-xl shadow-lg hover:pr-6 hover:brightness-95 transition-all duration-300 flex items-center gap-2 -translate-y-1/2 animate-in slide-in-from-right-10 fade-in"
-                    aria-label="View Cart"
-                >
-                    <div className="relative">
-                        <Lucide.ShoppingCart className="w-5 h-5" />
-                        
-                        <span className="absolute -top-2.5 -right-2.5 bg-red-500 text-white text-[10px] min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center font-bold border border-white">
-                            {cartItems.length}
-                        </span>
-                    </div>
-                </button>
-            )}
+            {/* Floating cart button removed - cart opens via programmatic events or other UI */}
 
             <Sheet open={isOpen} onOpenChange={setIsOpen}>
                 <SheetContent side="right" className="w-full sm:w-[540px] flex flex-col h-full px-4 sm:px-6 bg-white">
                     <SheetHeader>
                         <SheetTitle>
-                            <span className="flex items-center gap-2 text-sm">
-                                <Lucide.ShoppingCart className="w-5 h-5 text-[color:var(--color-primary)]" />
+                            <span className="flex text-center gap-2 text-sm">
                                 購物車
                             </span>
                         </SheetTitle>
@@ -374,21 +350,22 @@ export function GlobalCart() {
                                                      <Lucide.Gift className="w-4 h-4 text-yellow-600" />
                                                     買多1件全單減$5，買多2件減$10! 優惠無上限!!
                                                 </div>
-                                                <Carousel className="relative">
-                                                    <CarouselContent>
+                                                <Carousel opts={carouselOptions} className="relative">
+                                                    <CarouselContent className="-ml-6">
                                                         {upsellItems.map((upsell) => (
                                                             <CarouselItem
-                                                                                key={upsell.id}
-                                                                className="flex justify-center basis-1/2 max-w-[50%]"
+                                                                key={upsell.id}
+                                                                className="ml-2 flex gap-4 justify-center shrink-0 w-[200px] min-w-[160px] max-w-[50%]"
                                                             >
-                                                                <div
-                                                                    className="bg-white rounded-lg border border-yellow-100 shadow-sm p-3 min-w-[160px] flex flex-col items-center cursor-pointer hover:shadow-md transition"
-                                                                    onClick={(e) => {
-                                                                        // Prevent navigation if clicking the button
-                                                                        if ((e.target as HTMLElement).closest('button')) return;
-                                                                        router.push(`/flash-sale/${upsell.id}`);
-                                                                    }}
-                                                                >
+                                                                    <div
+                                                                        className="bg-white rounded-lg border border-yellow-100 shadow-sm p-3 min-w-[160px] flex flex-col items-center cursor-pointer hover:shadow-md transition"
+                                                                        onClick={(e) => {
+                                                                            // Prevent opening when clicking the button
+                                                                            if ((e.target as HTMLElement).closest('button')) return;
+                                                                            setDrawerId(String(upsell.id));
+                                                                            setDrawerOpen(true);
+                                                                        }}
+                                                                    >
                                                                     <div className="w-20 h-20 rounded-md overflow-hidden bg-zinc-100 mb-2 flex items-start justify-center">
                                                                         {upsell.main_image ? (
                                                                             <img
@@ -409,6 +386,8 @@ export function GlobalCart() {
                                                                         size="sm"
                                                                         className="bg-yellow-400 text-yellow-900 hover:bg-yellow-500 w-full mt-1 text-center text-xs"
                                                                         disabled={addingUpsellId === upsell.id}
+                                                                        onPointerDown={(e) => e.stopPropagation()}
+                                                                        onTouchStart={(e) => e.stopPropagation()}
                                                                         onClick={(e) => {
                                                                             e.stopPropagation();
                                                                             handleAddUpsell(upsell);
@@ -570,6 +549,8 @@ export function GlobalCart() {
                         )}
                     </div>
                 </SheetContent>
+                {/* Product drawer for upsell preview */}
+                <ProductDrawer id={drawerId} open={drawerOpen} onOpenChange={(open) => { setDrawerOpen(open); if (!open) setDrawerId(null); }} />
                 {isCheckingOut && <LoadingOverlay message="正在提交訂單…" />}
             </Sheet>
         </>

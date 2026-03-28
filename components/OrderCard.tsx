@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import * as Lucide from 'lucide-react'
 import Image from 'next/image'
+import ImageFullscreen from './ImageFullscreen'
 
 import type { OCItem, OCOrder } from '@/types/order'
 import { cancelOrderItem, markOrderItemPrePendingToShip, markOrderItemVerified } from '@/lib/orderService'
@@ -50,6 +51,9 @@ export default function OrderCard({ order, className = '', compact = false, stat
   const [translates, setTranslates] = useState<Record<number, string>>({})
   // revealed: 'right' | 'left' | false
   const [revealed, setRevealed] = useState<Record<number, 'right' | 'left' | false>>({})
+  const [fsOpen, setFsOpen] = useState(false)
+  const [fsSrc, setFsSrc] = useState('')
+  const [fsAlt, setFsAlt] = useState('')
   const _clearOverlayLastSentRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -647,6 +651,7 @@ export default function OrderCard({ order, className = '', compact = false, stat
           const qtyNum = Number((it as any).quantity ?? 1)
           const total = Number.isFinite(priceNum) ? priceNum * (Number.isFinite(qtyNum) ? qtyNum : 1) : null
           const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2))
+          const thumbSrc = (it as any).thumbnail ?? (it as any).imageUrl ?? (it as any).image_url ?? (it as any).image ?? ''
           
           return (
             <div key={it.item_id ?? idx} className={isCanceled ? 'relative opacity-40' : 'relative'}>
@@ -714,14 +719,24 @@ export default function OrderCard({ order, className = '', compact = false, stat
                 >
                   <div className="flex items-center gap-4">
                     {/* Thumbnail column */}
-                    <div className="w-16 h-16 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
-                      {(() => {
-                        const imgSrc = (it as any).thumbnail ?? (it as any).imageUrl ?? (it as any).image_url ?? (it as any).image ?? ''
-                        if (imgSrc) {
-                          return <Image src={imgSrc} alt={String(it.sku_code ?? it.sku ?? '')} width={64} height={64} className="object-cover w-full h-full" />
+                    <div
+                      className="w-16 h-16 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0 cursor-pointer"
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (thumbSrc) {
+                          setFsSrc(thumbSrc)
+                          setFsAlt(String(it.sku_code ?? it.sku ?? ''))
+                          setFsOpen(true)
                         }
-                        return <div className="w-full h-full flex items-center justify-center text-sm text-gray-400">無圖</div>
-                      })()}
+                      }}
+                    >
+                      {thumbSrc ? (
+                        <Image src={thumbSrc} alt={String(it.sku_code ?? it.sku ?? '')} width={64} height={64} className="object-cover w-full h-full" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-sm text-gray-400">無圖</div>
+                      )}
                     </div>
                     <div className="flex-1 min-w-0 ">
                       <div className="text-sm font-semibold text-gray-900 ">{it.sku_code ?? it.sku}</div>
@@ -750,6 +765,7 @@ export default function OrderCard({ order, className = '', compact = false, stat
           )
         })}
       </div>
+      <ImageFullscreen src={fsSrc} alt={fsAlt} open={fsOpen} onClose={() => setFsOpen(false)} />
     </div>
   )
 }

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Volume2, VolumeX } from "lucide-react";
+import { Volume2, VolumeX, ShoppingCart, MoreHorizontal } from "lucide-react";
 import ProductDrawer from '@/components/ProductDrawer'
 import { useCallback } from 'react'
 
@@ -15,6 +15,7 @@ type ProductLike = {
 
 export function ImmersiveFeed({ products = [], onRegister }: { products?: ProductLike[]; onRegister?: (p: ProductLike) => void; }) {
   const [index, setIndex] = useState(0);
+  const [cartCount, setCartCount] = useState(0);
   const [isMuted, setIsMuted] = useState(true);
   const [showVolIcon, setShowVolIcon] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -261,6 +262,20 @@ export function ImmersiveFeed({ products = [], onRegister }: { products?: Produc
     } as React.CSSProperties;
   })();
 
+  useEffect(() => {
+    const handler = (e: Event) => {
+      try {
+        const ce = e as CustomEvent;
+        if (ce && ce.detail && typeof ce.detail.count === 'number') {
+          setCartCount(ce.detail.count);
+          return;
+        }
+      } catch {}
+    };
+    window.addEventListener('cart-updated', handler as EventListener);
+    return () => window.removeEventListener('cart-updated', handler as EventListener);
+  }, []);
+
   return (
     <>
     <div
@@ -313,7 +328,7 @@ export function ImmersiveFeed({ products = [], onRegister }: { products?: Produc
               <div className="pointer-events-auto mb-8">
                 <button
                   onClick={() => openDrawerFor(p.id)}
-                  className="bg-primary text-white px-4 py-2 rounded backdrop-blur"
+                  className="bg-primary text-white text-sm w-[99px] h-[34px] rounded-full shadow-lg backdrop-blur"
                 >
                   立即購買
                 </button>
@@ -392,6 +407,38 @@ export function ImmersiveFeed({ products = [], onRegister }: { products?: Produc
         )}
     </div>
       <ProductDrawer id={drawerId} open={drawerOpen} onOpenChange={setDrawerOpen} />
+
+      <div className="fixed right-6 bottom-19 z-[50] flex flex-col items-center gap-3 pointer-events-auto" style={{ right: 'env(safe-area-inset-right, 1rem)' }}>
+
+      {cartCount > 0 && (
+        <div className="flex flex-col items-center gap-1 pointer-events-auto">
+          <button
+            onClick={() => window.dispatchEvent(new Event('open-cart'))}
+            aria-label="Open Cart"
+            className={`relative rounded-full transition-transform transform flex items-center justify-center ${isMobile ? 'w-10 h-10 p-2' : 'w-12 h-12 p-3'} bg-white/90 shadow-2xl hover:scale-105  `}
+          >
+            <ShoppingCart className="w-5 h-5 text-primary" />
+            {cartCount > 0 && (
+              <span className="absolute -top-0 -right-0 bg-red-500 text-white text-[9px] min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center font-bold border border-white">
+                {cartCount}
+              </span>
+            )}
+          </button>
+          <div className="text-xs text-white font-semibold uppercase tracking-wide bg-black/20 px-2 py-0.5 rounded-full">購物車</div>
+        </div>
+      )}
+
+      <div className="flex flex-col items-center gap-1 pointer-events-auto">
+          <button
+            onClick={() => router.push('/order-history')}
+            aria-label="Order history"
+            className={`rounded-full transition-transform transform flex items-center justify-center ${isMobile ? 'w-10 h-10 p-2' : 'w-12 h-12 p-3'} bg-white/90 shadow-2xl hover:scale-105`}
+          >
+            <MoreHorizontal className="w-5 h-5 text-primary" />
+          </button>
+          <div className="text-xs text-white font-semibold uppercase tracking-wide bg-black/20 px-2 py-0.5 rounded-full">訂單查詢</div>
+        </div>
+      </div>
     </>
    );
 }

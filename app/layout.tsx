@@ -43,7 +43,7 @@ export default function RootLayout({
       <body className={`${merriweather.variable} font-sans antialiased`}>
         <NoConsole />
         {children}
-        
+
         <Analytics />
         <Toaster />
         <GlobalCart />

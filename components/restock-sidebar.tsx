@@ -147,19 +147,22 @@ export default function RestockSidebar({ product }: Props) {
           <div className="flex-1">
             <div className="flex items-start justify-between">
               <div>
-                <SheetTitle className="text-md font-bold">{product ? product.sku : "-"}</SheetTitle>
-                <div className="mt-2 text-xs text-gray-700">候補總數：</div>
-                <div className="text-sm font-extrabold text-[#111] mt-1">{totalWaitlistCount} 件</div>
+                <SheetTitle className="text-sm font-bold">{product ? product.sku : "-"}</SheetTitle>
+                  <div className="mt-2 flex items-center gap-2 text-xs">
+                    <div className="text-gray-700">候補總數：</div>
+                    <div className="font-extrabold text-[#111]">{totalWaitlistCount} 件</div>
+                  </div>
+                
               </div>
             </div>
 
             <div className="mt-4 max-h-36 overflow-y-auto pr-2">
               {variations.length === 0 && (
-                <div className="text-sm text-gray-500">沒有變體資料</div>
+                <div className="text-xs text-gray-500">沒有變體資料</div>
               )}
 
               {variations.map((v) => (
-                <div key={v.variation_id} className="flex items-center justify-between text-sm text-gray-800 py-1">
+                <div key={v.variation_id} className="flex items-center justify-between text-xs text-gray-800 py-1">
                   <div className="flex items-center gap-1">
                     
                     <div>{v.size_name} | {v.color}</div>
@@ -174,7 +177,7 @@ export default function RestockSidebar({ product }: Props) {
 
       <div className="p-4">
         <Button
-          className="w-full rounded-full bg-primary text-white"
+          className="w-full rounded-full bg-primary text-white text-xs h-[29px]"
           onClick={() => setWizardOpen(true)}
         >
           補貨
@@ -202,10 +205,10 @@ export default function RestockSidebar({ product }: Props) {
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <div>
                   
-                  <div className="text-sm text-gray-700 mt-1">{o.customerName} | 聯絡電話: {o.whatsapp}</div>
+                  <div className="text-xs text-gray-700 mt-1">顧客:{o.customerName} | 聯絡電話: {o.whatsapp}</div>
                  
                  
-                  <div className="text-xs text-gray-700 mt-2">共{o.totalItems ?? o.quantity ?? 1} 件商品候補中</div>
+                  <div className="text-[10px] text-gray-400 mt-2">{o.totalItems ?? o.quantity ?? 1} 件商品候補中</div>
                 </div>
               </div>
             </div>

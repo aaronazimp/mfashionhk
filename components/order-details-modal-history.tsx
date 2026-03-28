@@ -326,25 +326,25 @@ export default function OrderDetailsModal({ open, onOpenChange, customerId, refe
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className=" p-0 gap-0 w-full max-w-[90vw] flex flex-col h-[95vh] overflow-hidden">
-        <DialogTitle className="text-sm text-center font-semibold px-4 py-3">訂單明細</DialogTitle>
+      <DialogContent className=" p-0 gap-0 w-full max-w-[90vw] flex flex-col h-[90vh] overflow-hidden">
+        <DialogTitle className="text-xs text-center font-semibold px-4 py-3">訂單明細</DialogTitle>
         {/* Header */}
         <div className="bg-white z-10 border-b border-gray-100 px-4 py-4 relative">
           <div className="flex flex-col items-start gap-1">
             <div className="min-w-0">
-              <div className="text-sm font-bold mb-2">參考編號: {payload?.reference_id}</div>
-              <div className="text-sm font-bold">顧客: {payload?.customer_info?.customer_name}</div>
+              <div className="text-xs font-bold mb-2">參考編號: {payload?.reference_id}</div>
+              <div className="text-xs ">顧客: {payload?.customer_info?.customer_name}</div>
             </div>
-            <div className="text-sm text-gray-700">聯絡電話: {payload?.customer_info?.phone}</div>
+            <div className="text-xs text-gray-700">聯絡電話: {payload?.customer_info?.phone}</div>
           </div>
           <div className="mt-3 flex items-center justify-between gap-4">
-            <div className="text-xs font-medium">共 {payload?.summary?.total_orders} 張訂單</div>
+            <div className="text-[10px] text-gray-500">共 {payload?.summary?.total_orders} 張訂單</div>
             
           </div>
           
         </div>
 
-        <div className="border-t" />
+        <div className="" />
 
         <div className="flex-1 overflow-y-auto bg-white p-4">
           {loading ? (
@@ -365,7 +365,7 @@ export default function OrderDetailsModal({ open, onOpenChange, customerId, refe
                        
 
                         <div className="rounded-2xl overflow-hidden  mx-auto max-w-4xl">
-                          <div className="bg-white rounded-b-2xl p-4 space-y-6 border-t border-gray-100">
+                          <div className="py-4 flex items-center ">
                             {(page?.orders || []).map((order) => (
                               <OrderCard key={order.order_number} order={order as any} statusBadge={(s) => <OrderStatusBadge status={s as string} />} />
                             ))}

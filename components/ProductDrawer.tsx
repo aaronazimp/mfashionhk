@@ -272,7 +272,7 @@ export default function ProductDrawer({ id, open, onOpenChange }: Props) {
           <div className="flex flex-col w-full h-auto">
             <div className="sticky top-0 z-20 bg-white/90 backdrop-blur-sm border-b">
               <div className="px-4 py-3 mt-4">
-                <div className="text-sm font-semibold">{product?.SKU || 'SKU NAME'}</div>
+                <div className="text-md font-semibold">{product?.SKU || 'SKU NAME'}</div>
 
                 <div className="flex justify-between gap-3 mt-1">
                   <div className="text-md font-bold">${product?.regular_price ?? '0'}</div>

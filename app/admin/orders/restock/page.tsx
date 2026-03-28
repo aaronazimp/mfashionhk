@@ -11,6 +11,7 @@ import RestockSidebar from '@/components/restock-sidebar'
 import { supabase } from '@/lib/supabase'
 import * as Lucide from 'lucide-react'
 import { HeaderTabMenu } from '@/components/header-tab-menu'
+import PaginationControls from '@/components/ui/pagination-controls'
 
 export default function RestockPage() {
   const [query, setQuery] = useState("");
@@ -165,7 +166,7 @@ export default function RestockPage() {
               key={opt.key}
               onClick={() => { setFilterType(opt.key); setPage(1); }}
               className={
-                `px-3 py-1 rounded-full text-xs transition-colors ${filterType === opt.key ? 'bg-[#C4A59D] text-white' : 'bg-white border border-gray-200 text-gray-700'}`
+                `px-2 py-1 rounded-full text-xs transition-colors ${filterType === opt.key ? 'bg-[#C4A59D] text-white' : 'bg-white border border-gray-200 text-gray-700'}`
               }
             >
               {opt.label}
@@ -175,7 +176,7 @@ export default function RestockPage() {
 
         {/* Results metadata (top) */}
         {restockMetadata && (
-          <div className="mb-4 flex items-center justify-between text-xs text-gray-600">
+          <div className="mb-4 flex items-center justify-between text-[9px] text-gray-600">
             <div className="flex items-center gap-2">
               <Lucide.Eye className="w-4 h-4 text-gray-600" />
               <div>
@@ -186,7 +187,7 @@ export default function RestockPage() {
             </div>
             <div>
               {typeof restockMetadata.total_results !== 'undefined' ? (
-                <div className="text-xs text-gray-600">共 {restockMetadata.total_results} 筆結果</div>
+                <div className="text-[9px] text-gray-600">共 {restockMetadata.total_results} 筆結果</div>
               ) : null}
             </div>
           </div>
@@ -220,33 +221,12 @@ export default function RestockPage() {
         {/* (moved) pagination metadata and controls are rendered above results */}
         {/* Pagination controls (bottom) */}
         {restockMetadata && (
-          <div className="mt-auto flex items-center justify-center py-4">
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                className="p-2 border-0"
-                disabled={restockMetadata.current_page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                aria-label="上一頁"
-              >
-                <Lucide.ChevronLeft className="w-4 h-4" />
-              </Button>
-
-              <div className="px-2 text-sm text-gray-700">
-                第 {restockMetadata.current_page} / {restockMetadata.total_pages} 頁
-              </div>
-
-              <Button
-                variant="outline"
-                className="p-2 border-0"
-                disabled={restockMetadata.current_page >= restockMetadata.total_pages}
-                onClick={() => setPage((p) => Math.min(restockMetadata.total_pages ?? p + 1, p + 1))}
-                aria-label="下一頁"
-              >
-                <Lucide.ChevronRight className="w-4 h-4" />
-              </Button>
-            </div>
-          </div>
+          <PaginationControls
+            currentPage={restockMetadata.current_page ?? 1}
+            totalPages={restockMetadata.total_pages ?? 1}
+            onPageChange={(p) => setPage(p)}
+            className="mt-auto flex items-center justify-center py-4"
+          />
         )}
 
         {/* Sidebar sheet for restock details */}

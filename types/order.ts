@@ -1,18 +1,53 @@
-export interface RestockVariation {
-  // RPC output shape (required fields)
+export interface WaitlistOrder {
+  order_id: string
+  created_at: string
+  order_number: string
+  customer_name: string
+  quantity_needed: number
+  [key: string]: any
+}
+
+export interface RestockColor {
+  color: string
+  reels_quota: number
   variation_id: number
+  current_stock: number
+  waitlist_count: number
+  waitlist_orders: WaitlistOrder[]
+  [key: string]: any
+}
+
+export interface RestockSize {
   size: string
+  colors: RestockColor[]
+}
+
+export interface RestockSku {
+  sizes: RestockSize[]
+  sku_code: string
+  main_preview_image?: string | null
+  total_orders_count?: number
+  total_sku_waitlist?: number
+  total_variation_count?: number
+  [key: string]: any
+}
+
+// Backwards-compatible representation for places that expect a single variation
+export interface RestockVariation {
+  variation_id: number
+  size?: string
   color: string
   current_stock: number
   current_quota?: number
-
-  // Optional UI/backwards-compatible aliases
-  // `id` may be present for components that expect a string id
+  reels_quota?: number
+  waitlist_count?: number
+  // keep legacy aliases for older UI code
   id: string
-  // legacy quantity field used across the UI
   currentQty?: number
   waitlist?: number
   waitlistOrders?: any[]
+  // newer field matching RPC
+  waitlist_orders?: WaitlistOrder[]
 }
 
 export interface OrderLineItem {

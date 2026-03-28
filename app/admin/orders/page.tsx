@@ -729,11 +729,11 @@ function CustomerList({ statusFilter, page, perPage, onPageChange, onOpenCustome
           const header = (
             <>
               <div>
-                <div className="text-sm font-bold">{cust.customer_name || '—'} | {cust.phone}</div>
+                <div className="text-xs font-bold">{cust.customer_name || '—'} | {cust.phone}</div>
                 <div className="text-[10px] text-gray-500">
                  
                   {((cust.matching_action_count ?? null) !== null) && (
-                    <span className="ml-2">{cust.matching_action_count} 張訂單</span>
+                    <span className="">{cust.matching_action_count} 張訂單</span>
                   )}
                 </div>
                 {statusFilter === 'confirmed' && (

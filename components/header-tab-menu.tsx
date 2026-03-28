@@ -12,7 +12,7 @@ export function HeaderTabMenu({ active }: Props) {
   const [open, setOpen] = React.useState(false);
   const ordersWrapperRef = React.useRef<HTMLDivElement | null>(null);
   const ordersMenuRef = React.useRef<HTMLDivElement | null>(null);
-  const base = "flex-shrink-0 md:flex-initial w-full md:w-auto px-2 md:px-4 py-2 md:py-2 rounded text-md md:text-sm text-left hover:bg-white/50 transition-colors";
+  const base = "flex-shrink-0 md:flex-initial w-full md:w-auto px-2 md:px-4 py-2 md:py-2 rounded text-sm md:text-sm text-left hover:bg-white/50 transition-colors";
   const [submenuOpen, setSubmenuOpen] = React.useState(false);
 
   const items: Array<
@@ -148,11 +148,11 @@ export function HeaderTabMenu({ active }: Props) {
                   onMouseLeave={() => setSubmenuOpen(false)}
                 >
                   <div className="flex flex-col py-1">
-                    {ordersSubitems.map((s) => (
+                        {ordersSubitems.map((s) => (
                       <Link
                         key={s.key}
                         href={s.href}
-                        className={`px-3 py-2 text-sm hover:bg-gray-100 ${currentActive === s.key ? 'font-medium underline decoration-2 underline-offset-4 decoration-[#C4A59D]' : 'text-gray-700'}`}
+                            className={`px-3 py-2 text-sm hover:bg-gray-100 ${currentActive === s.key ? 'font-medium underline decoration-2 underline-offset-4 decoration-[#C4A59D]' : 'text-gray-700'}`}
                         onClick={() => setSubmenuOpen(false)}
                       >
                         {s.label}
@@ -191,7 +191,7 @@ export function HeaderTabMenu({ active }: Props) {
 
         <aside
           id="header-tab-menu-mobile"
-            className={`absolute top-0 left-0 h-full w-64 bg-gray-50 border-r border-gray-200 pt-12 px-4 pb-12 transform transition-transform duration-300 ease-in-out ${open ? 'translate-x-0' : '-translate-x-full'} z-50 overflow-auto`}
+            className={`absolute top-0 left-0 h-full w-50 bg-gray-50 border-r border-gray-200 pt-12 px-4 pb-12 transform transition-transform duration-300 ease-in-out ${open ? 'translate-x-0' : '-translate-x-full'} z-90 overflow-auto`}
           aria-hidden={!open}
         >
           <nav className="flex flex-col gap-1">
@@ -227,7 +227,7 @@ export function HeaderTabMenu({ active }: Props) {
                               setOpen(false);
                               setSubmenuOpen(false);
                             }}
-                            className={`${base} text-sm py-2 pl-2 pr-4 rounded-lg ${currentActive === s.key ? 'font-medium underline decoration-2 underline-offset-4 decoration-[#C4A59D]' : 'text-[#111827]'}`}
+                            className={`${base} text-xs py-2 pl-2 pr-4 rounded-lg ${currentActive === s.key ? 'font-medium underline decoration-2 underline-offset-4 decoration-[#C4A59D]' : 'text-[#111827]'}`}
                           >
                             {s.label}
                           </Link>

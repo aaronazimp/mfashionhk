@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { getRestockAllocationData, processBulkRestock } from "@/lib/orderService";
-import type { RestockVariation } from "@/types/order";
+import type { RestockVariation, RestockSku } from "@/types/order";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -21,8 +21,8 @@ interface RestockWizardProps {
   isOpen: boolean;
   onClose: () => void;
   sku?: string;
-  // optional initial variations; otherwise demo data is used
-  initial?: RestockVariation[];
+  // optional initial variations or full SKU payload; otherwise demo data is used
+  initial?: RestockVariation[] | RestockSku;
 }
 
 function SkuSummary({ sku, rows, children, preview }: { sku: string; rows: RestockVariation[]; children?: React.ReactNode; preview?: string | null }) {
@@ -37,9 +37,9 @@ function SkuSummary({ sku, rows, children, preview }: { sku: string; rows: Resto
         )}
       </div>
       <div className="flex-1">
-        <div className="font-bold text-sm">{sku}</div>
-        <div className="text-xs text-gray-500 mt-1">共有 {rows.length} 個變體</div>
-        <div className="mt-2 font-bold text-sm">候補總數：{rows.reduce((s, v) => s + (v.waitlist ?? 0), 0)} 件</div>
+        <div className="font-bold text-xs">{sku}</div>
+        <div className="text-[10px] text-gray-500 mt-1">共有 {rows.length} 個變體</div>
+        <div className="mt-2 font-bold text-[10px]">候補總數：{rows.reduce((s, v) => s + (v.waitlist ?? 0), 0)} 件</div>
         {children && <div className="mt-3">{children}</div>}
       </div>
     </div>
@@ -59,7 +59,33 @@ function EmptyWidget({ title, subtitle }: { title?: string; subtitle?: string })
 }
 
 export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", initial }: RestockWizardProps) {
-  const initialRows: RestockVariation[] = initial ?? [];
+  let initialRows: RestockVariation[] = [];
+  if (Array.isArray(initial)) {
+    initialRows = initial as RestockVariation[];
+    } else if (initial && typeof initial === "object" && (initial as RestockSku).sizes) {
+    const skuInit = initial as RestockSku;
+    initialRows = skuInit.sizes.flatMap((s) => {
+      const sizeName = s.size ?? "";
+      return (s.colors || []).map((c: any) => ({
+        variation_id: Number(c.variation_id ?? c.variationId ?? c.id),
+        id: String(c.variation_id ?? c.variationId ?? c.id),
+        size: sizeName ?? c.size ?? undefined,
+        color: c.color ?? c.color_name ?? undefined,
+        waitlist: Number(c.waitlist_count ?? c.waitlist ?? 0),
+        current_stock: Number(c.current_stock ?? c.currentStock ?? 0),
+        reels_quota: (() => {
+          const rq = c.reels_quota ?? c.reelsQuota;
+          return rq !== undefined && rq !== null ? Number(rq) : undefined;
+        })(),
+        current_quota: (() => {
+          const cq = c.current_quota ?? c.currentQuota ?? c.reels_quota ?? c.reelsQuota;
+          return cq !== undefined && cq !== null ? Number(cq) : undefined;
+        })(),
+        currentQty: Number(c.current_stock ?? c.currentStock ?? 0),
+        waitlistOrders: c.waitlist_orders ?? c.waitlistOrders ?? undefined,
+      }));
+    });
+  }
 
   const [step, setStep] = useState<number>(1);
   const [rows, setRows] = useState<RestockVariation[]>(initialRows);
@@ -124,7 +150,8 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
         if (mainPreview) setPreviewImage(String(mainPreview));
 
         if (payload?.sizes && Array.isArray(payload.sizes)) {
-          const mapped: RestockVariation[] = payload.sizes.flatMap((s: any) => {
+          const skuPayload = payload as RestockSku;
+          const mapped: RestockVariation[] = skuPayload.sizes.flatMap((s: any) => {
             const sizeName = s.size ?? "";
               return (s.colors || []).map((c: any) => ({
               variation_id: Number(c.variation_id ?? c.variationId ?? c.id),
@@ -134,8 +161,12 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
               waitlist: Number(c.waitlist_count ?? c.waitlist ?? 0),
               // preserve RPC fields for UI display (ensure numbers)
               current_stock: Number(c.current_stock ?? c.currentStock ?? 0),
+              reels_quota: (() => {
+                const rq = c.reels_quota ?? c.reelsQuota;
+                return rq !== undefined && rq !== null ? Number(rq) : undefined;
+              })(),
               current_quota: (() => {
-                const cq = c.current_quota ?? c.currentQuota;
+                const cq = c.current_quota ?? c.currentQuota ?? c.reels_quota ?? c.reelsQuota;
                 return cq !== undefined && cq !== null ? Number(cq) : undefined;
               })(),
               // keep legacy alias used across the component
@@ -165,8 +196,12 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
               color: v.color ?? v.color_name ?? undefined,
               waitlist: Number(v.waitlist_count ?? v.waitlist ?? 0),
               current_stock: Number(v.current_stock ?? v.current_qty ?? 0),
+              reels_quota: (() => {
+                const rq = v.reels_quota ?? v.reelsQuota;
+                return rq !== undefined && rq !== null ? Number(rq) : undefined;
+              })(),
               current_quota: (() => {
-                const cq = v.current_quota ?? v.currentQuota;
+                const cq = v.current_quota ?? v.currentQuota ?? v.reels_quota ?? v.reelsQuota;
                 return cq !== undefined && cq !== null ? Number(cq) : undefined;
               })(),
               currentQty: Number(v.current_qty ?? v.current_stock ?? 0),
@@ -472,7 +507,7 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
     <AlertDialog open={isOpen} onOpenChange={(o) => { if (!o) handleClose(); }}>
       <AlertDialogContent className="relative max-w-[90vw] max-h-[90vh] p-6 rounded-2xl">
         <AlertDialogHeader>
-          <AlertDialogTitle className="sr-only">補貨明細</AlertDialogTitle>
+          <AlertDialogTitle className="text-xs">補貨明細</AlertDialogTitle>
           <div className="flex items-center justify-between mb-4">
             {step > 1 && step !== 4 && (
               <Button size="icon-sm" variant="ghost" className="absolute top-2 left-2 p-0" aria-label="Back" onClick={() => setStep((s) => Math.max(1, s - 1))}>
@@ -481,9 +516,7 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
                 </svg>
               </Button>
             )}
-            <div className="flex-1 text-center">
-              <div className="text-sm font-medium text-gray-500">補貨明細</div>
-            </div>
+            
             <div className="ml-4 text-right">
               <button
                 onClick={handleClose}
@@ -507,34 +540,36 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
 
         <div className="space-y-6">
           {step === 1 && (
-            <div className="flex flex-col gap-9 ">
+            <div className="flex flex-col gap-9 max-h-[90vh] overflow-y-auto">
               <SkuSummary sku={sku} rows={rows} preview={previewImage} />
               {rows.length === 0 ? (
                 <EmptyWidget title="找不到變體" subtitle="目前沒有可顯示的變體資料。" />
               ) : (
-                <div className="max-w-[400px] mx-5 max-h-[300px] overflow-y-auto">
+                <div className="max-w-[400px] mx-5 max-h-[90vh] overflow-y-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="text-xs text-gray-500">
+                      <tr className="text-[9px] text-gray-500">
                         <th className="text-center">尺寸</th>
                         <th className="text-center">顏色</th>
-                        <th className="text-center">現有庫存</th>
+                        <th className="text-center">庫存</th>
+                        <th className="text-center">配額</th>
                         <th className="text-center">番貨數量</th>
-                        <th className="text-center">候補數量</th>
+                        <th className="text-center">候補</th>
                       </tr>
                     </thead>
                     <tbody className="align-top">
                       {rows.map((r) => (
                         <tr key={r.id} className="border-t py-2">
-                          <td className="py-3 text-xs text-center">{r.size}</td>
-                          <td className="py-3 text-xs text-center">{r.color}</td>
-                          <td className="py-3 text-xs text-center">{r.currentQty}</td>
-                          <td className="py-3 text-xs text-center">
+                          <td className="py-3 text-[10px] text-center">{r.size}</td>
+                          <td className="py-3 text-[10px] text-center">{r.color}</td>
+                          <td className="py-3 text-[10px] text-center">{r.currentQty}</td>
+                          <td className="py-3 text-[10px] text-center">{r.current_quota}</td>
+                          <td className="py-3 text-[10px] text-center">
                             <Input
                               type="text"
                               inputMode="numeric"
                               pattern="[0-9]*"
-                              className="w-11 h-7 text-center px-0 py-0 text-xs"
+                              className="w-9 h-7 text-center px-0 py-0 text-[10px]"
                               value={String(restockAmounts[r.id] ?? "")}
                               onChange={(e) => {
                                 const v = e.target.value.replace(/[^0-9]/g, "");
@@ -542,7 +577,7 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
                               }}
                             />
                           </td>
-                          <td className="py-3 text-xs text-center">{r.waitlist}</td>
+                          <td className="py-3 text-[10px] text-center">{r.waitlist}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -551,23 +586,23 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
               )}
 
               <div className="mt-6 flex justify-center">
-                <Button size="sm" className="bg-[#C4A59D] text-white" onClick={goToStep2}>下一步</Button>
+                <Button size="sm" className="bg-[#C4A59D] text-white text-xs h-[24px]" onClick={goToStep2}>下一步</Button>
               </div>
             </div>
           )}
 
           {step === 2 && (
-            <div>
+            <div className="max-h-[90vh] overflow-y-auto">
               <SkuSummary sku={sku} rows={rows} preview={previewImage}>
                 {filteredIndices.length > 0 && (
-                  <div className="flex h-[32px]">
-                    <Button size="sm" variant="outline" onClick={autoAssignAll}>自動分配所有變體</Button>
+                  <div className="flex h-[24px]">
+                    <Button size="sm" variant="outline" className="text-xs h-[29px]" onClick={autoAssignAll}>自動分配所有變體</Button>
                   </div>
                 )}
               </SkuSummary>
               {filteredIndices.length > 0 && (
                 <div className="flex flex-col items-center justify-center mb-4 mt-4">
-                  <div className="text-[11px] font-semibold text-center">第 {selectedVariationIndex + 1} / {rows.length} 個變體 (只顯示有訂單的變體)</div>
+                  <div className="text-[10px] font-semibold text-center">第 {selectedVariationIndex + 1} / {rows.length} 個變體 (只顯示有訂單的變體)</div>
                   <div className="mt-2 flex items-center justify-center">
                     <div className="w-8 flex items-center justify-center">
                       {filteredPos > 0 ? (
@@ -582,7 +617,7 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
                     </div>
 
                     <div className="mx-2">
-                      <div className="text-xs px-3 py-1 bg-gray-100 rounded-full text-center">{rows[selectedVariationIndex].size} | {rows[selectedVariationIndex].color}</div>
+                      <div className="text-[10px] px-3 py-1 bg-gray-100 rounded-full text-center">{rows[selectedVariationIndex].size} | {rows[selectedVariationIndex].color}</div>
                     </div>
 
                     <div className="w-8 flex items-center justify-center">
@@ -605,8 +640,8 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
               ) : (
                 <div className="bg-white p-4 space-y-3">
                   <div className="flex items-baseline gap-3">
-                    <div className="text-sm text-gray-500">當前庫存: <span className="font-bold text-[#C4A59D]">{selectedCombined} 件</span></div>
-                    <div className="text-[11px] text-gray-400">(庫存 {selectedCurrent} + 補貨 {selectedRestockAmount})</div>
+                    <div className="text-xs text-gray-500">當前庫存: <span className="font-bold text-[#C4A59D]">{selectedCombined} 件</span></div>
+                    <div className="text-[10px] text-gray-400">(庫存 {selectedCurrent} + 補貨 {selectedRestockAmount})</div>
                   </div>
 
                   <div className="flex justify-between text-xs text-gray-500">
@@ -618,7 +653,7 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
                       />
                       <div>訂單</div>
                     </div>
-                    <div>數量</div>
+                    <div className="text-[9px]">數量</div>
                   </div>
 
                   <div className="space-y-2 divide-y divide-gray-200">
@@ -671,74 +706,78 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
               )}
 
               <div className="mt-6 flex justify-center">
-                <Button size="sm" className="bg-[#C4A59D] text-white" onClick={() => setStep(3)}>下一步</Button>
+                <Button size="sm" className="bg-[#C4A59D] text-white text-xs h-[24px]" onClick={() => setStep(3)}>下一步</Button>
               </div>
             </div>
           )}
 
           {step === 3 && (
-            <div>
+            <div className="max-h-[90vh] overflow-y-auto">
               <SkuSummary sku={sku} rows={rows} preview={previewImage} />
               <div className="max-h-[90vh] overflow-y-auto">
-                <div className="text-xs font-semibold mt-4 text-left">分配名單</div>
-                {/* Variations that have orders/waitlist */}
-                <div className="rounded p-3 divide-y divide-gray-200">
-                  {rows.some((v) => (restockPayloadMap[v.id]?.order_ids?.length ?? 0) > 0 || (allocationPreview[v.id]?.length ?? 0) > 0) ? (
-                    rows
-                      .filter((v) => (restockPayloadMap[v.id]?.order_ids?.length ?? 0) > 0 || (allocationPreview[v.id]?.length ?? 0) > 0)
-                      .map((v) => {
-                      const payloadEntry = restockPayloadMap[v.id] ?? { variation_id: v.id, restock_amount: 0, order_ids: allocationPreview[v.id] ?? [] };
-                      return (
-                        <div key={v.id} className="py-3">
-                          <div className="flex items-center justify-between gap-4">
-                            <div className="flex items-start gap-2">
-                              <div className="font-semibold text-xs ">{v.size} | {v.color}</div>
-                            <div className="text-[11px] text-gray-500">總庫存: <span className="text-xs text-[#C4A59D]">{availableFor(v.id)} ( {v.currentQty} + <span className="text-xs text-[#C4A59D]">{payloadEntry.restock_amount}補貨)</span> </span></div>
-                            </div>
-                            <div className="text-xs text-gray-500 ">共{v.waitlist}件</div>
-                          </div>
-                          
-                          <div className="divide-y divide-gray-200 mt-2">
-                            {(payloadEntry.order_ids ?? []).length > 0 ? (
-                              (payloadEntry.order_ids ?? []).map((oid: string) => {
-                                const order = v.waitlistOrders?.find((o: any) => String(o.order_id) === String(oid));
-                                const displayName = order?.customer_name;
-                                const displayOrderNumber = order?.order_number;
-                                const displayQty = order?.quantity_needed;
-                                return (
-                                  <div key={oid} className="flex items-center py-2 px-2 gap-4">
-                                    <div className="flex-1 text-xs">{displayName}</div>
-                                    <div className="flex-1 text-xs text-gray-500">{displayOrderNumber}</div>
-                                    <div className="w-12 text-right text-xs">x {displayQty}</div>
+                {rows.some((v) => (restockPayloadMap[v.id]?.order_ids?.length ?? 0) > 0 || (allocationPreview[v.id]?.length ?? 0) > 0) && (
+                  <>
+                    <div className="text-xs font-semibold mt-4 text-left">分配名單</div>
+                    {/* Variations that have orders/waitlist */}
+                    <div className="rounded p-3 divide-y divide-gray-200">
+                      {rows
+                        .filter((v) => (restockPayloadMap[v.id]?.order_ids?.length ?? 0) > 0 || (allocationPreview[v.id]?.length ?? 0) > 0)
+                        .map((v) => {
+                          const payloadEntry = restockPayloadMap[v.id] ?? { variation_id: v.id, restock_amount: 0, order_ids: allocationPreview[v.id] ?? [] };
+                          return (
+                            <div key={v.id} className="py-3">
+                              <div className="flex items-center justify-between gap-4">
+                                  <div className="flex items-start gap-2">
+                                    <div>
+                                      <div className="font-semibold text-xs">{v.size} | {v.color}</div>
+                                      <div className="text-[11px] text-gray-500">配額: <span className="text-xs text-gray-700">{quotaFromRpc[v.id] ?? v.current_quota ?? '-'}</span></div>
+                                    </div>
+                                    <div className="text-[11px] text-gray-500">總庫存: <span className="text-xs text-[#C4A59D]">{availableFor(v.id)} ( {v.currentQty} + <span className="text-xs text-[#C4A59D]">{payloadEntry.restock_amount}補貨)</span> </span></div>
                                   </div>
-                                );
-                              })
-                            ) : (
-                              <div className="text-xs text-gray-500 py-2">未選擇訂單</div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                      })
-                  ) : (
-                    <EmptyWidget title="未選擇任何分配" />
-                  )}
-                </div>
+                                <div className="text-xs text-gray-500 ">共{v.waitlist}件</div>
+                              </div>
+
+                              <div className="divide-y divide-gray-200 mt-2">
+                                {(payloadEntry.order_ids ?? []).length > 0 ? (
+                                  (payloadEntry.order_ids ?? []).map((oid: string) => {
+                                    const order = v.waitlistOrders?.find((o: any) => String(o.order_id) === String(oid));
+                                    const displayName = order?.customer_name;
+                                    const displayOrderNumber = order?.order_number;
+                                    const displayQty = order?.quantity_needed;
+                                    return (
+                                      <div key={oid} className="flex items-center py-2 px-2 gap-4">
+                                        <div className="flex-1 text-xs">{displayName}</div>
+                                        <div className="flex-1 text-xs text-gray-500">{displayOrderNumber}</div>
+                                        <div className="w-12 text-right text-xs">x {displayQty}</div>
+                                      </div>
+                                    );
+                                  })
+                                ) : (
+                                  <div className="text-xs text-gray-500 py-2">未選擇訂單</div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </>
+                )}
 
                 {/* New section: variations without orders */}
                 <div className=" my-3" />
                 <div>
-                  <div className="text-xs font-semibold mb-2">單純補貨</div>
+                    <div className="text-xs font-semibold mb-2">單純補貨</div>
                   <div className="p-3 divide-y divide-gray-200">
                       {
                         // header for the simple restock list
                       }
-                      <div className="flex items-center text-xs text-gray-500 font-semibold mb-2">
+                      <div className="flex items-center text-[9px] text-gray-500 font-semibold mb-2">
                         <div className="w-2/4">變體</div>
                         <div className="w-2/4 flex justify-between">
-                          <div className="w-1/3 text-right">原有</div>
-                          <div className="w-1/3 text-right">補貨</div>
-                          <div className="w-1/3 text-right">合計</div>
+                          <div className="w-1/4 text-right">配額</div>
+                          <div className="w-1/4 text-right">原有</div>
+                          <div className="w-1/4 text-right">補貨</div>
+                          <div className="w-1/4 text-right">合計</div>
                         </div>
                       </div>
 
@@ -746,11 +785,15 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
                         .filter((v) => (v.waitlistOrders?.length ?? 0) === 0 && (allocationPreview[v.id]?.length ?? 0) === 0)
                         .map((v) => (
                           <div key={v.id} className="flex items-start py-2">
-                            <div className="text-xs w-2/4">{v.size} | {v.color}</div>
-                            <div className="text-xs text-gray-500 w-2/4 flex justify-between">
-                              <div className="w-1/3 text-right">{v.currentQty}</div>
-                              <div className="w-1/3 text-right">{restockAmounts[v.id] ?? 0}</div>
-                              <div className="w-1/3 text-right">{availableFor(v.id)}</div>
+                            <div className="text-[10px] w-2/4">
+                              <div>{v.size} | {v.color}</div>
+                             
+                            </div>
+                            <div className="text-[10px] text-gray-500 w-2/4 flex justify-between">
+                              <div className="w-1/4 text-right">{v.current_quota}</div>
+                              <div className="w-1/4 text-right">{v.currentQty}</div>
+                              <div className="w-1/4 text-right">{restockAmounts[v.id] ?? 0}</div>
+                              <div className="w-1/4 text-right">{Number(v.currentQty ?? 0) + Number(v.current_quota ?? 0)}</div>
                             </div>
                           </div>
                         ))}
@@ -762,7 +805,7 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
               </div>
 
               <div className="mt-6 flex justify-center">
-                <Button size="sm" className="bg-[#C4A59D] text-white" onClick={handleProcessRestock} disabled={processing}>
+                <Button size="sm" className="bg-[#C4A59D] text-white text-xs h-[24px]" onClick={handleProcessRestock} disabled={processing}>
                   {processing ? "處理中..." : "完成"}
                 </Button>
               </div>
@@ -771,12 +814,12 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
           )}
 
           {step === 4 && (
-            <div className="text-center py-8">
-              <div className="mx-auto w-20 h-20 rounded-full bg-[#F1F5F9] flex items-center justify-center mb-6">
-                <svg className="w-10 h-10 text-[#C4A59D]" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
+            <div className="text-center py-8 max-h-[90vh] overflow-y-auto">
+              <div className="mx-auto w-14 h-14 rounded-full bg-[#F1F5F9] flex items-center justify-center mb-6">
+                <svg className="w-9 h-9 text-[#C4A59D]" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
               </div>
-              <div className="text-lg font-bold mb-9">完成補貨</div>
-              <div className="text-sm text-gray-500 mb-6">分配訂單後，剩下的補貨已加入庫存</div>
+              <div className="text-md font-bold mb-2">完成補貨</div>
+              <div className="text-[10px] text-gray-500 mb-9">分配訂單後，剩下的補貨已加入庫存</div>
 
                     { /* debug logging moved to useEffect */ }
                   <div className="inline-block text-left w-56">
@@ -785,7 +828,7 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
                     ) : (
                       <table className="w-full text-sm">
                         <thead>
-                          <tr className="text-xs text-gray-500">
+                          <tr className="text-[9px] text-gray-500">
                             <th className="text-left">變體</th>
                             <th className="text-right">配額</th>
                             <th className="text-right">庫存</th>
@@ -795,15 +838,15 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
                         <tbody>
                           {rows.map((r) => (
                             <tr key={r.id} className="border-t">
-                                <td className="py-2">{r.size} | {r.color}</td>
+                                <td className="py-2 text-[10px]">{r.size} | {r.color}</td>
                                 <td className="py-2 text-right">
-                                  <div className="text-xs text-gray-700">{quotaFromRpc[r.id] ?? r.current_quota ?? '-'}</div>
+                                  <div className="text-[10px] text-gray-700">{quotaFromRpc[r.id] ?? r.current_quota ?? '-'}</div>
                                 </td>
                                 <td className="py-2 text-right">
-                                  <div className="text-xs">{r.currentQty ?? r.current_stock ?? ''}</div>
+                                  <div className="text-[10px]">{r.currentQty ?? r.current_stock ?? ''}</div>
                                 </td>
                                 <td className="py-2 text-right font-bold">
-                                  <div className="text-xs">{(Number(quotaFromRpc[r.id] ?? r.current_quota ?? 0) + Number(r.currentQty ?? r.current_stock ?? 0))}</div>
+                                  <div className="text-[10px]">{(Number(quotaFromRpc[r.id] ?? r.current_quota ?? 0) + Number(r.currentQty ?? r.current_stock ?? 0))}</div>
                                 </td>
                               </tr>
                           ))}
@@ -815,7 +858,7 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
                  
 
               <div className="mt-6">
-                <Button size="sm" className="bg-[#C4A59D] text-white" onClick={() => { handleClose(); }}>確認</Button>
+                <Button size="sm" className="bg-[#C4A59D] text-white text-xs h-[24px]" onClick={() => { handleClose(); }}>確認</Button>
               </div>
             </div>
           )}

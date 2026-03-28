@@ -19,9 +19,26 @@ export default async function OrderHistoryPage({ searchParams }: Props) {
     ? String(resolvedSearchParams?.transaction_id[0])
     : resolvedSearchParams?.transaction_id ?? ''
 
+  // Sticky buttons component (rendered in both form and results views)
+  const StickyButtons = () => (
+    <div className="fixed bottom-4 left-0 right-0 flex justify-center pointer-events-none z-50">
+      <div className="pointer-events-auto flex gap-2">
+        <Link href="/flash-sale" className="bg-primary text-white text-xs px-4 py-2 rounded-full shadow-lg hover:opacity-95 transition-opacity">
+          返回首頁
+        </Link>
+       
+      </div>
+    </div>
+  )
+
   if (!whatsapp) {
-    // Render a small client form to collect whatsapp
-    return <OrderHistoryForm />
+    // Render a small client form to collect whatsapp — keep sticky buttons visible
+    return (
+      <div className="p-6 max-w-[90vw] mx-auto">
+        <OrderHistoryForm />
+        <StickyButtons />
+      </div>
+    )
   }
 
   // Call the service helper to fetch customer order history
@@ -62,12 +79,8 @@ export default async function OrderHistoryPage({ searchParams }: Props) {
             </div>
           ))}
       </div>
-      {/* Sticky return button to /flash-sale */}
-      <div className="fixed bottom-4 left-0 right-0 flex justify-center pointer-events-none z-50">
-        <Link href="/flash-sale" className="pointer-events-auto bg-primary text-white text-xs px-4 py-2 rounded-full shadow-lg hover:opacity-95 transition-opacity">
-          返回首頁  
-        </Link>
-      </div>
+      {/* Sticky return buttons */}
+      <StickyButtons />
     </div>
   )
 }

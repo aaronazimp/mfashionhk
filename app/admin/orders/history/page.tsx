@@ -152,7 +152,7 @@ export default function OrdersHistoryPage() {
   }, [filter, searchTerm, page])
 
   return (
-    <div className="flex flex-col min-h-screen pt-8">
+    <div className="flex flex-col min-h-screen pt-8 max-w-[1200px] mx-auto">
       <div className="pt-4">
         <HeaderTabMenu active="history" />
         
@@ -178,7 +178,7 @@ export default function OrdersHistoryPage() {
               size="sm"
               variant={filter === f.key ? 'default' : 'outline'}
               onClick={() => setFilter(f.key)}
-              className={`rounded-full text-xs py-2 px-2 border-0 ${filter === f.key ? '' : 'bg-gray-100 dark:bg-slate-800'}`}
+              className={`rounded-full text-xs h-6 w-16 border-0 ${filter === f.key ? '' : 'bg-gray-100 dark:bg-slate-800'}`}
             >
               {f.label}
             </Button>
@@ -203,10 +203,10 @@ export default function OrdersHistoryPage() {
                   onToggle={() => toggleExpanded(cust.customer_id ?? cust.phone ?? idx)}
                   header={
                     <div>
-                      <div className="font-medium">
-                        {cust.customer_name || '未命名'} <span className="text-sm text-black">| {cust.phone || '—'}</span>
+                      <div className="font-medium text-xs">
+                        {cust.customer_name || '未命名'} <span className=" text-black">| {cust.phone || '—'}</span>
                       </div>
-                      <div className="text-xs text-gray-500 mt-1">{cust.total_matching_groups ?? cust.matching_order_count ?? (cust.orders || []).length}張訂單</div>
+                      <div className="text-[10px] text-gray-500 mt-1">{cust.total_matching_groups ?? cust.matching_order_count ?? (cust.orders || []).length}張訂單</div>
                     </div>
                   }
                   right={
@@ -236,20 +236,20 @@ export default function OrdersHistoryPage() {
                                 >
                                       <div className="flex flex-col">
                                         <div className="text-[9px] text-gray-500">交易號碼</div>
-                                        <div className="text-sm font-semibold text-black">{g.group_id}</div>
+                                        <div className="text-xs font-semibold text-black">{g.group_id}</div>
                                       </div>
                                     <div className="flex items-center gap-2">
                                       {g.is_customer_created && (
                                         <div className="text-[10px] text-white bg-gray-500 px-2 py-0.5 rounded-full">顧客建立訂單</div>
                                       )}
-                                      <div className="text-sm text-gray-700">{ListStatusLabel[statusKey] || statusKey}</div>
+                                      <div className="text-[10px] text-gray-700">{ListStatusLabel[statusKey] || statusKey}</div>
                                     </div>
                                 </div>
                               )
                             })}
                           </div>
                         ) : (
-                          <div className="mt-2 text-sm text-gray-500">無交易記錄</div>
+                          <div className="mt-2 text-xs text-gray-500">無交易記錄</div>
                         )}
 
                         {cust.has_more_history && (

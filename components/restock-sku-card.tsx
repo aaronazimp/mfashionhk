@@ -47,8 +47,8 @@ export default function RestockSkuCard({ product, restockCount, onOpen }: Restoc
       </CardContent>
 
       {restockCount >= 1 && (
-        <div className="absolute top-2 right-2">
-          <Badge className="bg-primary text-white text-sm">需補貨 {restockCount}</Badge>
+        <div className="absolute top-0 right-1">
+          <Badge className="bg-primary text-white text-[10px]">需補貨 {restockCount}</Badge>
         </div>
       )}
     </Card>
