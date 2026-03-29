@@ -145,12 +145,12 @@ export function PaymentUploadForm({ orderId, onSuccess, paymentMethod }: { order
 
   if (isSuccess) {
     return (
-      <div className="border border-green-200 bg-green-50 rounded-lg p-8 text-center space-y-4">
+      <div className="border border-green-200 bg-green-50 rounded-lg p-2 text-center space-y-2">
         <div className="flex justify-center">
           <Lucide.CheckCircle2 className="h-12 w-12 text-green-500" />
         </div>
-        <div className="space-y-2">
-          <h3 className="text-xl font-semibold text-green-900">付款證明已提交！</h3>
+        <div className="space-y-1">
+          <h3 className="text-sm font-semibold text-green-900">付款證明已提交！</h3>
           <p className="text-green-700">感謝您的付款證明，我們將盡快確認。</p>
         </div>
       </div>
@@ -158,7 +158,7 @@ export function PaymentUploadForm({ orderId, onSuccess, paymentMethod }: { order
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2">
       {/* File Drop Zone */}
       {!file ? (
         <div
@@ -181,12 +181,12 @@ export function PaymentUploadForm({ orderId, onSuccess, paymentMethod }: { order
             onChange={handleFileSelect}
           />
           <div className="flex flex-col items-center gap-3">
-              <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
+              <div className="h-12 w-12 rounded-full flex items-center justify-center">
               <Lucide.CloudUpload className="h-6 w-6 text-muted-foreground" />
             </div>
-            <div className="space-y-1">
-              <p className="font-medium">點擊或拖曳上傳</p>
-              <p className="text-xs text-muted-foreground">支援 PNG, JPG, JPEG (最大 5MB)</p>
+            <div className="space-y-2">
+              <p className="font-medium text-sm">點擊或拖曳上傳</p>
+              <p className="text-[10px] text-muted-foreground">支援 PNG, JPG, JPEG (最大 5MB)</p>
             </div>
           </div>
         </div>
@@ -225,7 +225,7 @@ export function PaymentUploadForm({ orderId, onSuccess, paymentMethod }: { order
 
       {/* Submit Button */}
       <Button 
-        className="w-full" 
+        className="w-full h-[40px] text-xs" 
         size="lg"
         onClick={handleSubmit}
         disabled={!file || isUploading}

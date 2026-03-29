@@ -54,7 +54,10 @@ export function GlobalCart() {
 
     const [itemTimers, setItemTimers] = useState<Record<string, string>>({});
     const timerRef = useRef<number | null>(null);
+    const loadingTimeoutRef = useRef<number | null>(null);
+    const [showSpinner, setShowSpinner] = useState(false);
     const expiredReportedRef = useRef<Set<string>>(new Set());
+    const [cartTotal, setCartTotal] = useState<number | undefined>(undefined);
 
   const { toast } = useToast();
 
@@ -71,17 +74,23 @@ export function GlobalCart() {
                 setSessionToken(token);
         }
 
-        const handleCartUpdate = () => {
-                // Refresh session just in case it was created
-                const currentToken = localStorage.getItem("flash_sale_session_token");
-                if (currentToken) setSessionToken(currentToken);
-                setRefreshTrigger(prev => prev + 1);
-                // Reset submitted state when cart is updated
-                setIsSubmitted(false);
+        const handleCartUpdate = (e: Event) => {
+            // If this is an optimistic update from this component, ignore to avoid refetch spinner
+            try {
+                const ce = e as CustomEvent<any>;
+                if (ce && ce.detail && ce.detail.source === 'global-cart-optimistic') return;
+            } catch {}
+
+            // Refresh session just in case it was created
+            const currentToken = localStorage.getItem("flash_sale_session_token");
+            if (currentToken) setSessionToken(currentToken);
+            setRefreshTrigger(prev => prev + 1);
+            // Reset submitted state when cart is updated
+            setIsSubmitted(false);
         };
 
-        window.addEventListener("cart-updated", handleCartUpdate);
-        return () => window.removeEventListener("cart-updated", handleCartUpdate);
+        window.addEventListener("cart-updated", handleCartUpdate as EventListener);
+        return () => window.removeEventListener("cart-updated", handleCartUpdate as EventListener);
     }, []);
 
     // Per-item reservation countdown timers
@@ -158,11 +167,6 @@ export function GlobalCart() {
         const openHandler = () => setIsOpen(true);
         const openCheckoutHandler = () => {
             setIsOpen(true);
-            // give the sheet time to open then focus the checkout name input
-            setTimeout(() => {
-                const el = document.getElementById('checkout-name') as HTMLInputElement | null;
-                if (el) el.focus();
-            }, 400);
         };
 
         window.addEventListener('open-cart', openHandler);
@@ -174,50 +178,103 @@ export function GlobalCart() {
     }, []);
 
     // Fetch Cart and Upsell Items using RPC
-    useEffect(() => {
-        if (!sessionToken) return;
-        setLoading(true);
-        (async () => {
-            try {
-                const data = await getCartAndUpsellItems(sessionToken);
-                if (!data) {
-                    setCartItems([]);
-                    setUpsellItems([]);
-                    return;
-                }
-                // Use RPC items directly
-                const cartItemsRaw: CartRpcItem[] = data.cart_items || [];
-                setCartItems(cartItemsRaw);
-                // Notify other UI (immersive feed) about cart count
-                try { window.dispatchEvent(new CustomEvent('cart-updated', { detail: { count: (cartItemsRaw || []).length } })); } catch {}
+    const fetchCart = async (silent = false) => {
+        if (!sessionToken) {
+            if (!silent) {
+                setLoading(false);
+                setShowSpinner(false);
+            }
+            setCartItems([]);
+            return;
+        }
 
-                const upsells: UpsellRpcItem[] = data.upsell_items || [];
-                // Sort upsells by ID to ensure stable order across refetches
-                const sortedUpsells = [...upsells].sort((a, b) => String(a.id).localeCompare(String(b.id)));
-                setUpsellItems(sortedUpsells);
+        if (!silent) {
+            setLoading(true);
+            setShowSpinner(true);
+            if (loadingTimeoutRef.current) {
+                clearTimeout(loadingTimeoutRef.current);
+                loadingTimeoutRef.current = null;
+            }
+            loadingTimeoutRef.current = window.setTimeout(() => {
+                setShowSpinner(false);
+                loadingTimeoutRef.current = null;
+            }, 2500);
+        }
 
-                // Prefer explicit customer_profile from RPC if available
-                const cp: CustomerProfileRpc | undefined = data.customer_profile ?? undefined;
-                if (cp && (cp.name || cp.whatsapp || cp.address)) {
-                    setCustomerInfo({ name: cp.name || '', whatsapp: cp.whatsapp || '', address: cp.address || '' });
-                }
-            } catch (err) {
-                console.error('Cart fetch error:', err);
+        try {
+            const data = await getCartAndUpsellItems(sessionToken);
+            if (!data) {
                 setCartItems([]);
                 setUpsellItems([]);
-            } finally {
-                setLoading(false);
+                return;
             }
-        })();
+            // Use RPC items directly
+            const cartItemsRaw: CartRpcItem[] = data.cart_items || [];
+            setCartItems(cartItemsRaw);
+            // If backend provides a precomputed cart total, surface it
+            setCartTotal((data as any)?.cart_total ?? undefined);
+            // Notify other UI (immersive feed) about cart count
+            try { window.dispatchEvent(new CustomEvent('cart-updated', { detail: { count: (cartItemsRaw || []).length } })); } catch {}
+
+            const upsells: UpsellRpcItem[] = data.upsell_items || [];
+            // Sort upsells by ID to ensure stable order across refetches
+            const sortedUpsells = [...upsells].sort((a, b) => String(a.id).localeCompare(String(b.id)));
+            setUpsellItems(sortedUpsells);
+
+            // Prefer explicit customer_profile from RPC if available
+            const cp: CustomerProfileRpc | undefined = data.customer_profile ?? undefined;
+            if (cp && (cp.name || cp.whatsapp || cp.address)) {
+                setCustomerInfo({ name: cp.name || '', whatsapp: cp.whatsapp || '', address: cp.address || '' });
+            }
+        } catch (err) {
+            console.error('Cart fetch error:', err);
+            setCartItems([]);
+            setUpsellItems([]);
+        } finally {
+            if (!silent) {
+                setLoading(false);
+                // clear spinner timeout and hide
+                if (loadingTimeoutRef.current) {
+                    clearTimeout(loadingTimeoutRef.current);
+                    loadingTimeoutRef.current = null;
+                }
+                setShowSpinner(false);
+            }
+        }
+    };
+
+    useEffect(() => {
+        fetchCart(false);
     }, [sessionToken, refreshTrigger, isOpen]);
+
+    // Ensure spinner state is cleared when loading toggles off
+    useEffect(() => {
+        if (!loading) {
+            if (loadingTimeoutRef.current) {
+                clearTimeout(loadingTimeoutRef.current);
+                loadingTimeoutRef.current = null;
+            }
+            setShowSpinner(false);
+        }
+    }, [loading]);
     // Add upsell item to cart (server-side insertion removed)
     // Keep UI: open the product drawer for the upsell so user can preview/confirm
     const handleAddUpsell = async (upsell: UpsellRpcItem) => {
+        // set page query param so ProductDrawer can detect it
+        try {
+            if (typeof window !== 'undefined') {
+                const u = new URL(window.location.href)
+                u.searchParams.set('is_added_from_upsell', '1')
+                router.push(u.pathname + u.search)
+            }
+        } catch (e) {
+            // ignore router errors
+        }
         setDrawerId(String(upsell.id));
         setDrawerOpen(true);
     };
 
-    const totalAmount = cartItems.reduce((sum, item) => sum + ((Number(item.regular_price) || 0) * (Number(item.quantity) || 0)), 0);
+    
 
     // Customer info is handled by RPC on submit; keep local state only
 
@@ -288,18 +345,30 @@ export function GlobalCart() {
   };
 
     const removeItem = async (itemId: string | number) => {
-            // Optimistic update
-            setCartItems(prev => prev.filter(i => ((i as any).cart_item_id ?? (i as any).id) !== itemId));
-      
+        // Optimistic update: compute new list/count synchronously and notify UI
+        setCartItems(prev => {
+            const next = prev.filter(i => String((i as any).cart_item_id ?? (i as any).id) !== String(itemId));
+            try {
+                window.dispatchEvent(new CustomEvent('cart-updated', { detail: { count: next.length, source: 'global-cart-optimistic' } }));
+            } catch {}
+            return next;
+        });
+
         const { error } = await supabase.from('reels_orders_cart_items').delete().eq('id', itemId);
-      if (error) {
-          toast({ title: "刪除失敗", variant: "destructive" });
-          setRefreshTrigger(prev => prev + 1); // Revert/Reload
-      } else {
-          // If empty, notify UI via event (no floating button to hide)
-          try { window.dispatchEvent(new CustomEvent('cart-updated', { detail: { count: Math.max(0, (cartItems.length || 0) - 1) } })); } catch {}
-      }
-  };
+        if (error) {
+            toast({ title: "刪除失敗", variant: "destructive" });
+            // Re-fetch (with spinner) to restore correct state from backend
+            setRefreshTrigger(prev => prev + 1);
+        } else {
+            // Refresh silently to update totals/upsells without showing spinner flicker
+            try {
+                await fetchCart(true);
+            } catch (e) {
+                // Fallback to normal refresh if silent fetch fails
+                setRefreshTrigger(prev => prev + 1);
+            }
+        }
+    };
 
     // Component remains mounted so it can respond to `open-cart` events.
 
@@ -333,10 +402,18 @@ export function GlobalCart() {
                             </div>
                         ) : (
                             <>
-                                {loading && cartItems.length === 0 ? (
+                                {loading && showSpinner && cartItems.length === 0 ? (
                                     <div className="flex justify-center p-8"><Spinner className="h-8 w-8 text-gray-900" /></div>
                                 ) : cartItems.length === 0 ? (
-                                    <div className="text-center text-zinc-500 py-10">購物車是空的</div>
+                                    <div className="flex flex-col h-[100vh] items-center justify-center py-10">
+                                        <div className="bg-white p-6 rounded-lg text-center text-zinc-500  w-full">
+                                            <div className="flex flex-col items-center gap-2">
+                                                <Lucide.ShoppingCart className="w-8 h-8 text-zinc-400" />
+                                                <div className="font-medium">購物車是空的</div>
+                                                <div className="text-xs text-zinc-400">加入商品到購物車以開始結帳流程</div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 ) : (
                                     <div className="space-y-4">
                                         {/* Upsell Section */}
@@ -445,15 +522,29 @@ export function GlobalCart() {
                                                             <Lucide.X className="w-4 h-4" />
                                                         </button>
                                                     </div>
-                                                    <div className="text-xs text-zinc-500 mt-1">{(item as any).color} / {(item as any).size}</div>
-                                                    <div className="flex justify-between items-center mt-2">
-                                                        <div className="text-xs text-[color:var(--color-primary)]">HKD ${(item as any).regular_price}</div>
-                                                        <div className="text-xs text-zinc-500">x {(item as any).quantity}</div>
+                                                    <div className="flex items-start gap-4">
+                                                    <div className="text-xs text-zinc-500">{(item as any).color} / {(item as any).size}</div>
+                                                   <div className="text-xs text-zinc-500">x {(item as any).quantity}</div>
+                                                   </div>
+                                                    <div className="mt-2">
+                                                        <div className="flex justify-end items-center">
+                                                            
+                                                             <div className={`text-sm mt-1 ${ (item as any).is_cart_addon === true ? 'line-through text-zinc-400' : 'text-black font-bold' }`}>${(item as any).regular_price}</div>
+                                                            
+                                                        </div>
+                                                      <div className="flex justify-end gap-2 items-center">
+                                                       {(item as any).remark && (
+                                                        <div className="text-[10px] text-amber-700 mt-1">{(item as any).remark}</div>
+                                                    )}
+                                                       {(item as any).is_cart_addon !== false && (
+                                                           <div className="text-sm font-bold text-[color:var(--color-primary)]">${(item as any).effective_price}</div>
+                                                       )}
+                                                       </div>
                                                     </div>
 
                                                     {(item as any).expires_at && (
                                                         <div className="mt-2 inline-flex flex-col items-start gap-1">
-                                                            <div className="text-xs text-red-500">庫存保留倒數</div>
+                                                            <div className="text-[10px] text-red-500">庫存保留倒數</div>
                                                             <div className="text-red-700 bg-red-50 px-2 py-0.5 rounded-md font-mono text-xs animate-pulse">
                                                                 {(() => {
                                                                     const raw = itemTimers[String((item as any).cart_item_id ?? (item as any).id)];
@@ -470,7 +561,7 @@ export function GlobalCart() {
 
                                         <div className="border-t pt-4 flex justify-between items-center font-bold text-md">
                                             <span>總金額</span>
-                                            <span className="text-[color:var(--color-primary)]">HKD ${totalAmount}</span>
+                                            <span className="text-[color:var(--color-primary)]">HKD ${cartTotal}</span>
                                         </div>
                                     </div>
                                 )}
@@ -550,7 +641,25 @@ export function GlobalCart() {
                     </div>
                 </SheetContent>
                 {/* Product drawer for upsell preview */}
-                <ProductDrawer id={drawerId} open={drawerOpen} onOpenChange={(open) => { setDrawerOpen(open); if (!open) setDrawerId(null); }} />
+                <ProductDrawer
+                    id={drawerId}
+                    open={drawerOpen}
+                    onOpenChange={(open) => {
+                        setDrawerOpen(open);
+                        if (!open) {
+                            setDrawerId(null);
+                            try {
+                                if (typeof window !== 'undefined') {
+                                    const u = new URL(window.location.href)
+                                    u.searchParams.delete('is_added_from_upsell')
+                                    router.push(u.pathname + u.search)
+                                }
+                            } catch (e) {
+                                // ignore
+                            }
+                        }
+                    }}
+                />
                 {isCheckingOut && <LoadingOverlay message="正在提交訂單…" />}
             </Sheet>
         </>

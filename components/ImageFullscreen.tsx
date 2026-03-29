@@ -114,7 +114,18 @@ export default function ImageFullscreen({
       }
       if (container && container.parentElement) document.body.removeChild(container);
       document.body.style.overflow = prevOverflow;
-      if (prevActive.current && typeof prevActive.current.focus === "function") prevActive.current.focus();
+      // Avoid programmatically focusing input or editable elements when closing
+      if (prevActive.current && typeof prevActive.current.focus === "function") {
+        try {
+          const tag = (prevActive.current.tagName || '').toLowerCase();
+          const isEditable = prevActive.current.getAttribute && prevActive.current.getAttribute('contenteditable') === 'true';
+          if (tag !== 'input' && tag !== 'textarea' && !isEditable) {
+            prevActive.current.focus();
+          }
+        } catch (err) {
+          // If any error occurs, avoid focusing to be safe
+        }
+      }
     };
   }, [open, onClose, container]);
 

@@ -9,8 +9,10 @@ import { getSkuDetailsForDrawer, addToCart } from '@/lib/orderService'
 import { SkuDetailsForDrawer } from '@/lib/products'
 import * as Lucide from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import { ToastAction } from '@/components/ui/toast'
 import useSessionToken from '@/hooks/use-session-token'
 import { motion } from 'framer-motion'
+import { useSearchParams } from 'next/navigation'
 import ImageFullscreen from '@/components/ImageFullscreen'
 import { CountdownTimer } from '@/components/countdown-timer'
 const MDiv: any = motion.div
@@ -24,6 +26,18 @@ interface Props {
 export default function ProductDrawer({ id, open, onOpenChange }: Props) {
   const { toast } = useToast()
   const sessionToken = useSessionToken()
+  const searchParams = useSearchParams()
+  const isAddedFromUpsellParam = (() => {
+    try {
+      const v = searchParams?.get('is_added_from_upsell')
+      if (v === null || typeof v === 'undefined') return undefined
+      if (v === '1' || v === 'true') return true
+      if (v === '0' || v === 'false') return false
+      return v
+    } catch (e) {
+      return undefined
+    }
+  })()
 
   const [loading, setLoading] = useState(true)
   const [product, setProduct] = useState<SkuDetailsForDrawer | any>(null)
@@ -178,14 +192,32 @@ export default function ProductDrawer({ id, open, onOpenChange }: Props) {
 
     setIsAddingToCart(true)
     try {
-      const rpcParams = {
+      const rpcParams: any = {
         p_session_token: sessionToken,
         p_sku_id: parseInt(product.id),
         p_variation_id: variation ? variation.id : null,
         p_qty: 1,
       }
-      await addToCart(rpcParams.p_session_token, rpcParams.p_sku_id, rpcParams.p_variation_id, rpcParams.p_qty)
-      toast({ description: '已加入購物車' })
+      if (typeof isAddedFromUpsellParam !== 'undefined') rpcParams.p_is_added_from_upsell = isAddedFromUpsellParam
+      await addToCart(rpcParams.p_session_token, rpcParams.p_sku_id, rpcParams.p_variation_id, rpcParams.p_qty, rpcParams.p_is_added_from_upsell)
+      toast({
+        description: '已加入購物車',
+        duration: 3000,
+        action: (
+          <>
+           
+            <ToastAction
+              className="bg-[color:var(--color-primary)] text-[color:var(--color-primary-foreground)] border-transparent hover:brightness-95"
+              altText="結帳"
+              onClick={() => {
+                try { window.dispatchEvent(new Event('open-cart-checkout')) } catch (e) { }
+              }}
+            >
+              結帳
+            </ToastAction>
+          </>
+        ),
+      })
       window.dispatchEvent(new Event('cart-updated'))
     } catch (err) {
       console.error('add_to_cart error', err)
@@ -308,14 +340,14 @@ export default function ProductDrawer({ id, open, onOpenChange }: Props) {
 
               {/* Middle: variation selectors (choice chip style) */}
               <div className="px-4 py-3">
-                <div className="text-xs text-zinc-700 mb-2 text-center">選擇尺寸與顏色</div>
+                <div className="text-[10px] text-zinc-700 mb-2 text-center">選擇尺寸與顏色</div>
                 {tableSizes.length === 0 || tableColors.length === 0 ? (
                   <div className="text-zinc-500">單一尺寸 / 顏色</div>
                 ) : (
                   <div className="space-y-3">
                     {/* Size chips */}
                     <div>
-                      <div className="text-xs text-zinc-500 mb-2">尺碼</div>
+                      <div className="text-[10px] text-zinc-500 mb-2">尺碼</div>
                       <div className="overflow-x-auto touch-auto pb-1">
                         <div className="inline-flex items-center gap-3 whitespace-nowrap">
                         {tableSizes.map((size) => {
@@ -348,7 +380,7 @@ export default function ProductDrawer({ id, open, onOpenChange }: Props) {
 
                     {/* Color chips */}
                     <div>
-                      <div className="text-xs text-zinc-500 mb-2">顏色</div>
+                      <div className="text-[10px] text-zinc-500 mb-2">顏色</div>
                       <div className="overflow-x-auto touch-auto pb-1">
                         <div className="inline-flex items-center gap-3 whitespace-nowrap">
                         {colorsToShow.map((color) => {

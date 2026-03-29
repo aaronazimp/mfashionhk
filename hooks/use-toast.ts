@@ -141,7 +141,6 @@ type Toast = Omit<ToasterToast, 'id'>
 
 function toast({ ...props }: Toast) {
   const id = genId()
-
   const update = (props: ToasterToast) =>
     dispatch({
       type: 'UPDATE_TOAST',
@@ -149,16 +148,23 @@ function toast({ ...props }: Toast) {
     })
   const dismiss = () => dispatch({ type: 'DISMISS_TOAST', toastId: id })
 
+  // Default error/destructive toasts to a 5s visible duration if not specified
+  const toastProps: ToasterToast = {
+    ...props,
+    id,
+    open: true,
+    onOpenChange: (open) => {
+      if (!open) dismiss()
+    },
+  }
+
+  if (toastProps.variant === 'destructive' && typeof (toastProps as any).duration === 'undefined') {
+    ;(toastProps as any).duration = 5000
+  }
+
   dispatch({
     type: 'ADD_TOAST',
-    toast: {
-      ...props,
-      id,
-      open: true,
-      onOpenChange: (open) => {
-        if (!open) dismiss()
-      },
-    },
+    toast: toastProps,
   })
 
   return {

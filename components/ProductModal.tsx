@@ -16,6 +16,7 @@ import * as Lucide from "lucide-react";
 
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
+import { useSearchParams } from 'next/navigation';
 import { useToast } from "@/hooks/use-toast";
 import useSessionToken from "@/hooks/use-session-token";
 import { ToastAction } from "@/components/ui/toast";
@@ -36,6 +37,18 @@ export default function ProductModal({ id, open, onClose, initialProduct }: Prop
   const router = useRouter();
   const { toast } = useToast();
   const sessionToken = useSessionToken();
+  const searchParams = useSearchParams();
+  const isAddedFromUpsellParam = (() => {
+    try {
+      const v = searchParams?.get('is_added_from_upsell')
+      if (v === null || typeof v === 'undefined') return undefined
+      if (v === '1' || v === 'true') return true
+      if (v === '0' || v === 'false') return false
+      return v
+    } catch (e) {
+      return undefined
+    }
+  })();
   const [selection, setSelection] = useState({ size: "", color: "" });
   const [isAddingToCart, setIsAddingToCart] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
@@ -167,12 +180,13 @@ export default function ProductModal({ id, open, onClose, initialProduct }: Prop
 
     setIsAddingToCart(true);
     try {
-      const rpcParams = {
+      const rpcParams: any = {
         p_session_token: sessionToken,
         p_sku_id: parseInt(product.id),
         p_variation_id: variation ? variation.id : null,
         p_qty: 1,
       };
+      if (typeof isAddedFromUpsellParam !== 'undefined') rpcParams.p_is_added_from_upsell = isAddedFromUpsellParam
       const { data, error } = await supabase.rpc('add_to_cart', rpcParams as any);
       if (error) throw error;
       const result = data as any;
@@ -196,6 +210,7 @@ export default function ProductModal({ id, open, onClose, initialProduct }: Prop
               查看購物車
             </ToastAction>
             <ToastAction
+              className="bg-[color:var(--color-primary)] text-[color:var(--color-primary-foreground)] border-transparent hover:brightness-95"
               altText="結帳"
               onClick={() => {
                 try {

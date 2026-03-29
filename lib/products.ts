@@ -9,8 +9,17 @@ export interface SingleSkuImage {
 export interface SingleSkuColor {
   id: number
   color: string
-  stock: number
-  reels_quota: number
+  // legacy/optional fields
+  stock?: number
+  reels_quota?: number
+
+  // new RPC fields seen in recent responses
+  raw_quota?: number
+  raw_stock?: number
+  total_locked?: number
+  total_supply?: number
+  available_stock?: number
+
   [key: string]: any
 }
 
@@ -76,6 +85,7 @@ export interface CartRpcItem {
   SKU: string
   size?: string | null
   color?: string | null
+  remark?: string | null
   sku_id?: number | string
   status?: string | null
   quantity?: number
@@ -83,6 +93,8 @@ export interface CartRpcItem {
   main_image?: string | null
   cart_item_id?: string | null
   regular_price?: number | null
+  effective_price?: number | null
+  is_cart_addon?: boolean
   is_upsell_item?: boolean
   is_discount_eligible?: boolean
   [key: string]: any
@@ -106,6 +118,7 @@ export interface CustomerProfileRpc {
 
 export interface GetCartAndUpsellItemsResponse {
   cart_items: CartRpcItem[]
+  cart_total: number
   upsell_items: UpsellRpcItem[]
   customer_profile?: CustomerProfileRpc | null
   [key: string]: any
@@ -141,6 +154,13 @@ export interface PaymentPageOrder {
   payment_proof_url?: string | null
   deadline?: string | null
   payment_deadline?: string | null
+
+  // `orders` groups items by original order number (RPC: "orders": {"order_number": [...]})
+  orders?: Record<string, PaymentPageItem[]>
+
+  // Discounts / original subtotal from RPC
+  total_discount?: number
+  original_subtotal?: number
 
   // Items grouped by original order number
   pay_now_groups?: Record<string, PaymentPageItem[]>

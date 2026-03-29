@@ -11,7 +11,7 @@ import * as Lucide from "lucide-react";
 import { PaymentUploadForm } from "@/components/payment-upload-form";
 import { CountdownTimer } from "@/components/countdown-timer";
 import Link from "next/link";
-import OrderCard from '@/components/OrderCard';
+import OrderCardReadOnly from '@/components/OrderCardReadOnly';
 import { useRouter } from 'next/navigation';
 
 // Custom timer for HH:MM:SS (hours:minutes:seconds)
@@ -233,35 +233,33 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
 
   return (
     <ErrorBoundary>
-      <div className="min-h-screen bg-[#FFF4E5] flex items-center justify-center p-4">
+      <div className="min-h-screen bg-white flex items-center justify-center p-4">
         <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in duration-500 relative z-[9999]">
           <div className="p-6 md:p-8 space-y-6">
             
             {/* Check if order is cancelled */}
             {liveOrder.status === 'cancelled' ? (
-              <div className="min-h-screen bg-[#FFF4E5] flex items-center justify-center p-4 font-sans">
+              <div className="min-h-screen bg-white flex items-center justify-center p-4 font-sans">
                 <div className="bg-white p-8 rounded-2xl shadow-xl text-center max-w-md w-full space-y-6">
-                  <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <div className=" flex items-center justify-center mx-auto mb-4">
                     <svg className="w-10 h-10 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                   </div>
-                  <div className="space-y-2">
-                    <h1 className="text-2xl font-bold text-gray-900">訂單已取消</h1>
-                  </div>
-                  <p className="text-gray-500">
-                    此訂單已被取消，無法進行付款。<br/>
-                    如果您需要協助，
+                  <div className="space-y-1 mb-6">
+                    <h1 className="text-md font-bold text-gray-900 mb-9">訂單已取消</h1>
+                    <p className="text-sm text-gray-600">如果您有任何疑問或需要協助，</p>
                     <a
                       href="https://wa.me/85257290882"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-green-600 underline hover:text-green-700"
+                      className="text-green-600 underline hover:text-green-700 text-sm"
                     >請聯繫我們的客戶服務。</a>
-                  </p>
-                  <a href="/flash-sale" className="inline-block mt-4 px-6 py-2 bg-[#A87C73] text-white rounded-lg font-semibold hover:bg-[#986B62] transition">
+                  </div>
+                  
+                  <a href="/flash-sale" className="mt-9 text-xs p-2 w-full h-[30px] bg-[#A87C73] text-white rounded-lg font-semibold hover:bg-[#986B62] transition">
                     返回選購商品
                   </a>
-                  <div className="pt-6 border-t border-gray-100">
-                    <p className="text-[11px] text-gray-400 font-mono">流水號: {liveOrder.transaction_id || liveOrder.order_number || liveOrder.id.slice(0, 8)}</p>
+                  <div className="">
+                    <p className="mt-4 text-[10px] text-gray-400">流水號: {liveOrder.transaction_id || liveOrder.order_number || liveOrder.id.slice(0, 8)}</p>
                   </div>
                 </div>
               </div>
@@ -289,22 +287,22 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
                     {/* Items Breakdown */}
                     <div className="mb-4 w-full">
                       <div className="bg-white rounded-lg p-3">
-                        <p className="text-sm text-zinc-600 mb-2">以下是您訂購的產品，核對無誤後進入下一步付款</p>
-                        <h4 className="text-sm font-medium text-[#6b7280] mb-3 text-center">項目明細</h4>
+                        <p className="text-xs text-zinc-600 mb-9 text-center">以下是您訂購的產品，核對無誤後進入下一步付款</p>
+                        <h4 className="text-xs font-medium text-[#6b7280] mb-1 text-center">項目明細</h4>
                         {Object.keys(payNowGroups).length > 0 ? (
                           Object.entries(payNowGroups).map(([origOrderNumber, items]) => (
                             <div key={origOrderNumber} className="mb-3 flex justify-center">
-                              <OrderCard
-                                order={{
-                                  order_number: origOrderNumber,
-                                  items: (items || []).map((it: any) => ({
-                                    ...it,
-                                    thumbnail: it.thumbnail ?? it.image_url ?? it.sku_img_url ?? it.imageUrl ?? null,
-                                  })),
-                                }}
-                                className="bg-white rounded-lg shadow-md overflow-hidden w-full max-w-md"
-                              />
-                            </div>
+                                <OrderCardReadOnly
+                                  order={{
+                                    order_number: origOrderNumber,
+                                    items: (items || []).map((it: any) => ({
+                                      ...it,
+                                      thumbnail: it.thumbnail ?? it.image_url ?? it.sku_img_url ?? it.imageUrl ?? null,
+                                    })),
+                                  }}
+                                  className="bg-white rounded-lg shadow-md overflow-hidden w-full max-w-md"
+                                />
+                              </div>
                           ))
                         ) : (
                           <div className="text-sm text-zinc-500">無明細</div>
@@ -320,19 +318,19 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
 
                     {/* Payment Deadline Timer (moved above total) */}
                     {(liveOrder.payment_deadline || liveOrder.deadline) && !isPaymentSubmitted && liveOrder.status !== 'cancelled' && (
-                      <div className="mb-4 text-sm text-gray-700 rounded p-2 text-center">
+                      <div className="mb-4 text-[10px] text-gray-700 rounded p-2 text-center">
                         付款截止時間: <CustomCountdownTimer targetDate={new Date((liveOrder.payment_deadline || liveOrder.deadline) as string)} onEnd={() => fetchOrder(order.id, setLiveOrder)} />
                       </div>
                     )}
 
                     <div className="text-center">
-                      <div className="text-xl font-black text-[#A87C73] tracking-tight tabular-nums">應付金額 HK$ {displayAmount.toFixed(0)}</div>
+                      <div className="text-sm font-black text-black tracking-tight tabular-nums">應付金額 HK$ {displayAmount.toFixed(0)}</div>
                     </div>
 
                     <div className="text-center">
                       <button
                         onClick={() => goToStep(2)}
-                        className={`w-full bg-[#A87C73] hover:bg-[#986B62] text-white font-bold py-3 px-4 rounded-xl shadow-md transition-transform active:scale-95 ${isPaymentSubmitted ? 'opacity-60 cursor-not-allowed hover:bg-[#A87C73]' : ''}`}
+                        className={`w-full bg-[#A87C73] hover:bg-[#986B62] text-white text-xs w-[99px] h-[40px] rounded-full shadow-md transition-transform active:scale-95 ${isPaymentSubmitted ? 'opacity-60 cursor-not-allowed hover:bg-[#A87C73]' : ''}`}
                         disabled={isPaymentSubmitted}
                       >
                         {isPaymentSubmitted ? '付款已提交' : '下一步：選擇付款方式'}
@@ -345,20 +343,21 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
                 {currentStep === 2 && (
                   <>
                     <div className="text-center">
-                      <h1 className="text-lg font-semibold text-gray-600">選擇付款方式</h1>
+                      <h1 className="text-xs font-semibold text-gray-600">選擇付款方式</h1>
                     </div>
 
                     {/* Payment Method Selection */}
                     <Tabs value={selectedPaymentMethod} onValueChange={setSelectedPaymentMethod} className="w-full">
                       <TabsList className="grid w-full grid-cols-4 h-auto p-1 bg-gray-100/50 rounded-xl">
+                         <TabsTrigger value="fps" className="flex flex-col gap-1 py-3 text-xs data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-[#00ab4e]">
+                          <Lucide.Banknote className="w-5 h-5" />
+                          轉數快
+                        </TabsTrigger>
                         <TabsTrigger value="payme" className="flex flex-col gap-1 py-3 text-xs data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-[#E53535]">
                           <Lucide.Smartphone className="w-5 h-5" />
                           PayMe
                         </TabsTrigger>
-                        <TabsTrigger value="fps" className="flex flex-col gap-1 py-3 text-xs data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-[#00ab4e]">
-                          <Lucide.Banknote className="w-5 h-5" />
-                          轉數快
-                        </TabsTrigger>
+                       
                         <TabsTrigger value="wallets" className="flex flex-col gap-1 py-3 text-xs data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-[#00C250]">
                           <Lucide.QrCode className="w-5 h-5" />
                           電子錢包
@@ -372,11 +371,11 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
                       <div className="mt-6 min-h-[180px]">
                         <TabsContent value="payme" className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
                           <div className="bg-red-50/50 border border-red-100 rounded-xl p-4 text-center space-y-3">
-                            <p className="text-sm text-gray-600">即將推出</p>
+                            <p className="text-xs text-gray-600">即將推出</p>
                             <Link href="" target="_blank" rel="noopener noreferrer" className="block w-full">
-                                <button className="w-full bg-[#E53535] hover:bg-[#D62E2E] text-white font-bold py-3 px-4 rounded-xl shadow-md transition-transform active:scale-95 flex items-center justify-center gap-2">
+                                <button className="w-full bg-[#E53535] hover:bg-[#D62E2E] text-white text-xs font-bold py-3 px-4 rounded-xl shadow-md transition-transform active:scale-95 flex items-center justify-center gap-2">
                                 <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm.31-8.86c-1.77-.45-2.34-.94-2.34-1.67 0-.84.79-1.43 2.1-1.43 1.38 0 1.9.66 1.94 1.64h1.71c-.05-1.34-.87-2.57-2.49-2.97V5H10.9v1.69c-1.51.32-2.72 1.3-2.72 2.81 0 1.79 1.49 2.69 3.66 3.21 1.95.46 2.34 1.15 2.34 1.87 0 .53-.39 1.39-2.1 1.39-1.6 0-2.23-.72-2.32-1.64H8.04c.1 1.7 1.36 2.66 2.86 2.97V19h2.34v-1.67c1.52-.29 2.72-1.16 2.73-2.77-.01-2.2-1.9-2.96-3.66-3.42z" /></svg>
-                                PayMe HK{displayAmount.toFixed(0)}
+                                PayMe HKD ${displayAmount.toFixed(0)}
                               </button>
                             </Link>
                           </div>
@@ -384,23 +383,25 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
 
                         <TabsContent value="fps" className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
                           <Card className="bg-emerald-50/50 border-emerald-100 border-dashed">
-                            <CardContent className="p-4 space-y-3 text-sm text-gray-600">
-                              <div className="flex justify-between items-center border-b border-emerald-100 pb-2">
-                                <span>快速支付系統 ID</span>
-                                <span className="font-mono font-bold text-black text-base selection:bg-emerald-200">1234567</span>
-                              </div>
-                              <div className="flex justify-between items-center border-b border-emerald-100 pb-2">
-                                <span>電話號碼</span>
-                                <span className="font-mono font-bold text-black text-base selection:bg-emerald-200">+852 9123 4567</span>
-                              </div>
-                              <div className="flex justify-between items-center border-b border-emerald-100 pb-2">
-                                <span>轉帳金額</span>
-                                <span className="font-bold text-[#A87C73] text-lg">HKD {displayAmount.toFixed(0)}</span>
-                              </div>
-                              <div className="flex justify-between items-center">
+                            <CardContent className="p-4 space-y-3 text-xs text-gray-600">
+                               <div className="flex justify-between items-center">
                                 <span>帳戶名稱</span>
                                 <span className="font-bold text-black">M-Fashion Limited</span>
                               </div>
+                              <div className="flex justify-between items-center border-b border-emerald-100 pb-2">
+                                <span>轉數快號碼</span>
+                                <span className=" font-bold text-black text-sm selection:bg-emerald-200">1234567</span>
+                              </div>
+                              <div className="flex justify-between items-center border-b border-emerald-100 pb-2">
+                                <span>電話號碼</span>
+                                <span className=" font-bold text-black text-sm selection:bg-emerald-200">+852 9123 4567</span>
+                              </div>
+                              
+                              <div className="flex justify-between items-center border-b border-emerald-100 pb-2">
+                                <span>轉帳金額</span>
+                                <span className="font-bold text-black text-lg">HKD ${displayAmount.toFixed(0)}</span>
+                              </div>
+                             
                             </CardContent>
                           </Card>
                         </TabsContent>
@@ -410,14 +411,14 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
                           <div className="space-y-3">
                             {/* WeChat Pay */}
                             <Link href="" target="_blank" className="block w-full">
-                              <button className="w-full bg-[#00C250] hover:bg-[#00AC47] text-white font-bold py-3 px-4 rounded-xl shadow-md transition-transform active:scale-95 flex items-center justify-center gap-2">
+                              <button className="text-xs w-full bg-[#00C250] hover:bg-[#00AC47] text-white font-bold py-3 px-4 rounded-xl shadow-md transition-transform active:scale-95 flex items-center justify-center gap-2">
                                 即將推出
                               </button>
                             </Link>
 
                             {/* AlipayHK */}
                             <Link href="" target="_blank" className="block w-full">
-                              <button className="w-full bg-[#00A3EE] hover:bg-[#008AC9] text-white font-bold py-3 px-4 rounded-xl shadow-md transition-transform active:scale-95 flex items-center justify-center gap-2">
+                              <button className="text-xs w-full bg-[#00A3EE] hover:bg-[#008AC9] text-white font-bold py-3 px-4 rounded-xl shadow-md transition-transform active:scale-95 flex items-center justify-center gap-2">
                                 即將推出
                               </button>
                             </Link>
@@ -432,7 +433,7 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
                               <h3 className="font-medium text-gray-900">信用卡支付</h3>
                               <p className="text-sm text-gray-500">我們接受 Visa 和 MasterCard。</p>
                             </div>
-                              <button className="w-full bg-black text-white py-3 rounded-xl font-bold text-sm hover:bg-gray-800 transition-colors opacity-50 cursor-not-allowed">
+                              <button className="text-xs w-full bg-black text-white py-3 rounded-xl font-bold hover:bg-gray-800 transition-colors opacity-50 cursor-not-allowed">
                               支付 HKD {displayAmount.toFixed(0)} (即將推出)
                             </button>
                           </div>
@@ -440,21 +441,23 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
                       </div>
                     </Tabs>
 
-                    <div className="mt-4 space-y-3">
+                    <div className="mt-4 space-y-3 flex flex-col items-center justify-center">
+                      
+                       
                       <button
                         onClick={() => goToStep(3)}
-                        className={`w-full bg-[#A87C73] hover:bg-[#986B62] text-white font-bold py-3 px-4 rounded-xl shadow-md transition-transform active:scale-95 ${isPaymentSubmitted ? 'opacity-60 cursor-not-allowed hover:bg-[#A87C73]' : ''}`}
+                        className={`text-xs w-full bg-[#A87C73] text-white h-[40px] rounded-xl shadow-md transition-transform active:scale-95 ${isPaymentSubmitted ? 'opacity-60 cursor-not-allowed hover:bg-[#A87C73]' : ''}`}
                         disabled={isPaymentSubmitted}
                       >
-                        {isPaymentSubmitted ? '付款已提交' : '下一步：我已付款，上傳入數證明'}
+                        {isPaymentSubmitted ? '付款已提交' : '下一步：上傳入數證明'}
                       </button>
-
-                      <button
+<button
                         onClick={() => goToStep(1)}
-                        className="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-3 px-4 rounded-xl shadow-md transition-transform active:scale-95"
+                        className="text-gray-500 text-xs w-full h-[40px] border border-gray-300 rounded-xl shadow-md transition-transform active:scale-95"
                       >
                         返回上一步
                       </button>
+                     
                     </div>
                   </>
                 )}
@@ -463,15 +466,15 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
                 {currentStep === 3 && (
                   <>
                     <div className="text-center">
-                      <h1 className="text-2xl font-bold text-[#A87C73]">上傳付款證明</h1>
-                      <p className="mt-2 text-sm text-gray-500">請上傳您的付款截圖或收據</p>
+                      <h1 className="text-sm font-bold text-black">上傳付款證明</h1>
+                      <p className="mt-1 text-[10px] text-gray-500">請上傳您的付款截圖或收據</p>
                     </div>
 
                     <PaymentUploadForm orderId={order.id} paymentMethod={selectedPaymentMethod} onSuccess={() => goToStep(4)} />
 
                     <button
                         onClick={() => goToStep(2)}
-                      className="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-3 px-4 rounded-xl shadow-md transition-transform active:scale-95"
+                      className="text-xs w-full h-[40px] text-gray-500  py-3 px-4 rounded-xl shadow-md transition-transform active:scale-95"
                     >
                       返回上一步
                     </button>
@@ -510,7 +513,7 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
           
 
           <div className="px-6 pb-6">
-            <p className="text-[11px] text-gray-400 font-mono text-center">交易編號: {liveOrder.transaction_id || liveOrder.order_number || (liveOrder.id ? liveOrder.id.slice(0, 8) : '')}</p>
+            <p className="text-[10px] text-gray-400 text-center">交易編號: {liveOrder.transaction_id || liveOrder.order_number || (liveOrder.id ? liveOrder.id.slice(0, 8) : '')}</p>
           </div>
         </div>
       </div>

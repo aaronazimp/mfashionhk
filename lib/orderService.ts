@@ -439,15 +439,19 @@ export async function addToCart(
   p_session_token: string,
   p_sku_id: number | string,
   p_variation_id: number | null = null,
-  p_qty: number = 1
+  p_qty: number = 1,
+  p_is_added_from_upsell?: boolean
 ): Promise<any> {
   const id = typeof p_sku_id === 'string' ? Number(p_sku_id) : p_sku_id
-  const { data, error } = await supabase.rpc('add_to_cart', {
+  const rpcArgs: Record<string, any> = {
     p_session_token,
     p_sku_id: id,
     p_variation_id: p_variation_id ?? null,
     p_qty,
-  })
+  }
+  if (typeof p_is_added_from_upsell !== 'undefined') rpcArgs.p_is_added_from_upsell = p_is_added_from_upsell
+
+  const { data, error } = await supabase.rpc('add_to_cart', rpcArgs)
 
   if (error) {
     console.error('add_to_cart RPC error:', error)

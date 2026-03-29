@@ -26,6 +26,7 @@ import {
 } from "lucide-react"
 import { Spinner } from '@/components/ui/spinner'
 import NativeVideoPlayer from '@/components/native-video-player'
+import { useToast } from '@/hooks/use-toast'
 
 const todayLocal = (() => {
   const d = new Date()
@@ -329,6 +330,8 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
   const [newImageFilesState, setNewImageFilesState] = useState<Array<{ file: File; tempUrl: string }>>([])
   const [videoFile, setVideoFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  // Debug payload state: stores the structured payload that will be sent to the edge function
+  
   // Variation modal state
   const [isVariationDialogOpen, setIsVariationDialogOpen] = useState(false)
   const [localVariations, setLocalVariations] = useState<any[]>([])
@@ -343,6 +346,7 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
   const [isUpsell, setIsUpsell] = useState<boolean>(!!product.isUpsell)
   const [surcharge, setSurcharge] = useState<string>(product.surcharge ? String(product.surcharge) : '')
   const router = useRouter()
+  const { toast } = useToast()
 
   useEffect(() => {
     try { console.log('SkuEditor mounted', { id: product.id, name: product.name }) } catch (e) { /* ignore */ }
@@ -461,7 +465,18 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
   }
 
   const addColorToVariation = (vidx: number) => {
-    setLocalVariations(prev => prev.map((v, i) => i === vidx ? { ...v, colors: [...(v.colors || []), { color: '', stock: 0, reels_quota: 0 }] } : v))
+    setLocalVariations(prev => prev.map((v, i) => i === vidx ? {
+      ...v,
+      colors: [...(v.colors || []), {
+        color: '',
+        raw_stock: 0,
+        raw_quota: 0,
+        reels_quota: 0,
+        total_supply: 0,
+        total_locked: 0,
+        available_stock: 0,
+      }]
+    } : v))
   }
 
   const removeColorFromVariation = (vidx: number, cidx: number) => {
@@ -496,20 +511,50 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
   }
 
   const saveVariations = () => {
-    // Build sizes and colors aggregates from localVariations so the table updates immediately
-    const sizes = (localVariations || []).map((v: any) => v.size).filter(Boolean)
+
+    // Validation: ensure for every color, stock + quota >= order lock (total_locked)
+    for (const v of (localVariations || [])) {
+      for (const c of (v.colors || [])) {
+        const stock = Number(c.raw_stock ?? c.stock ?? 0)
+        const quota = Number(c.reels_quota ?? c.raw_quota ?? 0)
+        const locked = Number(c.total_locked ?? 0)
+        if (stock + quota < locked) {
+          toast({
+            title: '儲存失敗',
+            description: `變體 ${v.size || '-'} / ${c.color || '-'} 的 庫存 + 預售配額 小於 訂單鎖定，請調整後再儲存。`,
+            variant: 'destructive',
+          })
+          return
+        }
+      }
+    }
+    // Normalize variations so payload uses numeric `stock` and `reels_quota` fields
+    const normalizedVariations = (localVariations || []).map((v: any) => ({
+      ...v,
+      colors: (v.colors || []).map((c: any) => ({
+        ...c,
+        stock: Number(c.raw_stock ?? c.stock ?? 0),
+        reels_quota: Number(c.reels_quota ?? c.raw_quota ?? 0),
+      })),
+    }))
+
+    // Build sizes and colors aggregates from normalized variations so the table updates immediately
+    const sizes = normalizedVariations.map((v: any) => v.size).filter(Boolean)
     const colorsSet = new Set<string>()
     let totalQuota = 0
-    ;(localVariations || []).forEach((v: any) => {
+    normalizedVariations.forEach((v: any) => {
       (v.colors || []).forEach((c: any) => {
         if (c.color) colorsSet.add(c.color)
         if (typeof c.reels_quota === 'number') totalQuota += c.reels_quota
       })
     })
 
+    // Update local state to use the normalized variation objects
+    setLocalVariations(normalizedVariations)
+
     setProduct(prev => ({
       ...prev,
-      rawRpc: { ...(prev.rawRpc || {}), variations: localVariations },
+      rawRpc: { ...(prev.rawRpc || {}), variations: normalizedVariations },
       sizes: sizes.length ? sizes : prev.sizes,
       colors: Array.from(colorsSet).length ? Array.from(colorsSet) : prev.colors,
       totalQuota: totalQuota || prev.totalQuota,
@@ -687,35 +732,42 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
 
       // Send payload to edge function
       try {
-        const returned = await submitSkuEdit(
-          skuId,
-          skuData,
-          variationsToSend,
-          keptImages,
-          newImagesForSend,
-          videoFile instanceof File ? videoFile : null,
-          normalizedInitial.rawRpc
-        )
+        // Submit directly to the edge function (no debug panel)
+        try {
+          const returned = await submitSkuEdit(
+            skuId,
+            skuData,
+            variationsToSend,
+            keptImages,
+            newImagesForSend,
+            videoFile instanceof File ? videoFile : null,
+            normalizedInitial.rawRpc
+          )
 
-        // Revoke object URLs for uploaded files and preview
-        newImageFilesState.forEach((n: any) => {
-          try { URL.revokeObjectURL(n.tempUrl) } catch (e) { /* ignore */ }
-        })
-        try { if (typeof previewUrl === 'string') URL.revokeObjectURL(previewUrl) } catch (e) { /* ignore */ }
-        setNewImageFilesState([])
-        setVideoFile(null)
-        setPreviewUrl(null)
+          // Revoke object URLs for uploaded files and preview
+          newImageFilesState.forEach((n: any) => {
+            try { URL.revokeObjectURL(n.tempUrl) } catch (e) { /* ignore */ }
+          })
+          try { if (typeof previewUrl === 'string') URL.revokeObjectURL(previewUrl) } catch (e) { /* ignore */ }
+          setNewImageFilesState([])
+          setVideoFile(null)
+          setPreviewUrl(null)
 
-        setMessage('更新成功')
-        setIsChanged(false)
-        if (returned?.sku_id && returned.sku_id !== skuId) setProduct(prev => ({ ...prev, id: returned.sku_id }))
-        if (returned?.video_url || returned?.reels_video_url) {
-          const newUrl = returned.video_url || returned.reels_video_url
-          setProduct(prev => ({ ...prev, videoUrl: newUrl, reelsUrl: newUrl }))
+          setMessage('更新成功')
+          setIsChanged(false)
+          if (returned?.sku_id && returned.sku_id !== skuId) setProduct(prev => ({ ...prev, id: returned.sku_id }))
+          if (returned?.video_url || returned?.reels_video_url) {
+            const newUrl = returned.video_url || returned.reels_video_url
+            setProduct(prev => ({ ...prev, videoUrl: newUrl, reelsUrl: newUrl }))
+          }
+          try { router.push('/admin/skus') } catch (e) { /* ignore */ }
+          setLoading(false)
+          return
+        } catch (err: any) {
+          setMessage(err?.message || '更新失敗')
         }
-        try { router.push('/admin/skus') } catch (e) { /* ignore */ }
-        setLoading(false)
-        return
+
+        
       } catch (err: any) {
         setMessage(err?.message || '更新失敗')
       }
@@ -726,6 +778,8 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
       setLoading(false)
     }
   }
+
+  
 
     
 
@@ -749,13 +803,13 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
     <div className="bg-white overflow-visible">
       <div className="grid grid-cols-1 md:grid-cols-2 md:items-start">
         <div className="flex flex-col h-full bg-white">
-          <div className="p-6 space-y-6">
+          <div className="p-2 space-y-6">
              
              {/* Header Info */}
              <div className="space-y-4 border-b pb-6">
               
               <div className="space-y-2">
-                <Label htmlFor="name" className="text-xs">商品名稱</Label>
+                <Label htmlFor="name" className="text-[10px]">商品名稱</Label>
                 <Input 
                   id="name" 
                   value={product.name} 
@@ -768,7 +822,7 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
              {/* Pricing + Category (surcharge moved to checkbox row) */}
              <div className="flex gap-4">
                <div className="space-y-2">
-                 <Label htmlFor="price" className="text-xs">售價 (HK$)</Label>
+                 <Label htmlFor="price" className="text-[10px]">售價 (HK$)</Label>
                  <Input 
                   id="price" 
                   type="text"
@@ -781,7 +835,7 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
                  
                </div>
                <div className="space-y-2">
-                 <Label htmlFor="surcharge" className="text-xs">重件附加運費</Label>
+                 <Label htmlFor="surcharge" className="text-[10px]">重件附加運費</Label>
                  <Input
                    id="surcharge"
                    type="text"
@@ -801,7 +855,7 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
              <div className="flex items-center gap-6 mt-3">
 
                <div className="space-y-2">
-                 <Label htmlFor="category" className="text-xs">類別</Label>
+                 <Label htmlFor="category" className="text-[10px]">類別</Label>
                  <select
                    id="category"
                    value={product.category || ''}
@@ -819,19 +873,19 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
                  </select>
                </div>
                <label className="flex flex-col items-start gap-2">
-                 <span className="text-xs">加購優惠</span>
+                 <span className="text-[10px]">加購優惠</span>
                  <Checkbox checked={isDiscount} onCheckedChange={(v) => toggleDiscount(Boolean(v))} />
                  
                </label>
 
                <label className="flex flex-col items-start gap-2">
-                <span className="text-xs">推薦加購商品</span>
+                <span className="text-[10px]">推薦加購商品</span>
                  <Checkbox checked={isUpsell} onCheckedChange={(v) => toggleUpsell(Boolean(v))} />
                 
                </label>
 
                <label className="flex flex-col items-start gap-2">
-                <span className="text-xs">韓國制</span>
+                <span className="text-[10px]">韓國制</span>
                  <Checkbox checked={Boolean(product.madeInKorea)} onCheckedChange={(v) => toggleMadeInKorea(Boolean(v))} />
                </label>
 
@@ -842,13 +896,13 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
              {/* Deadline */}
              <div className="space-y-3 pt-4 border-t">
                  <div className="flex flex-col items-start justify-between mb-2">
-                    <div className="flex items-start gap-3">
-                           <Calendar className="w-4 h-4" />
-                      <Label className="text-xs mb-2">截單時間</Label>
+                    <div className="flex items-center gap-2 mb-2">
+                           <Calendar className="w-3 h-3" />
+                      <Label className="text-[10px]">截單時間</Label>
                       
                     </div>
                     <div className="flex gap-4">
-                    <span className="text-sm ">
+                    <span className="text-xs ">
                         {product.deadline ? (() => {
                             const d = new Date(product.deadline);
                             return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -856,7 +910,7 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
                     </span>
                     
                     <div className="relative">
-                      <button type="button" onClick={openDeadlinePicker} className="flex items-center gap-2 text-xs text-gray-600 hover:text-gray-800">
+                      <button type="button" onClick={openDeadlinePicker} className="flex items-center gap-2 text-[10px] text-gray-600 hover:text-gray-800">
                         更改期限
                       </button>
                       {/* Input is positioned over the button (invisible) when opening, so no extra visible field appears */}
@@ -889,17 +943,18 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
              <div className="mt-4">
                
                <div className="overflow-x-auto mt-2">
-                 <table className="w-full text-sm table-auto border-collapse">
-                   <thead>
-                     <tr className="text-left text-xs text-gray-500">
-                       <th className="p-2">尺碼</th>
-                       <th className="p-2"></th>
-                       <th className="p-2">顏色</th>
-                       <th className="p-2">庫存</th>
-                       <th className="p-2">預定配額</th>
-                    
-                     </tr>
-                   </thead>
+                 <table className="w-full text-xs table-auto border-collapse">
+                  <thead>
+                    <tr className="text-left text-[10px] text-gray-500">
+                      <th className="p-2">尺碼</th>
+                      <th className="p-2"></th>
+                      <th className="p-2">顏色</th>
+                      <th className="p-2">庫存</th>
+                      <th className="p-2">預售配額</th>
+                      <th className="p-2">訂單鎖定</th>
+                      <th className="p-2">可用庫存</th>
+                    </tr>
+                  </thead>
                    <tbody>
                      {(product.sizes || []).map((size) => {
                         const variations = product.rawRpc?.variations || [];
@@ -914,20 +969,25 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
                               <td className="p-2 align-top">-</td>
                               <td className="p-2 align-top">-</td>
                               <td className="p-2 align-top">-</td>
+                              <td className="p-2 align-top">-</td>
+                              <td className="p-2 align-top">-</td>
                             </tr>
                           )
                         }
 
                         return colorsArr.map((c: any, i: number) => {
-                          const stock = (typeof c.stock === 'number') ? c.stock : (c.stock ? Number(c.stock) : '-')
-                          const quota = (typeof c.reels_quota === 'number') ? c.reels_quota : (c.reels_quota ? Number(c.reels_quota) : '-')
+                          const rawStock = (typeof c.raw_stock === 'number') ? c.raw_stock : (c.raw_stock ? Number(c.raw_stock) : '-')
+                          const rawQuota = (typeof c.raw_quota === 'number') ? c.raw_quota : (c.raw_quota ? Number(c.raw_quota) : '-')
+                          const totalLocked = (typeof c.total_locked === 'number') ? c.total_locked : (c.total_locked ? Number(c.total_locked) : '-')
+                          const availableStock = (typeof c.available_stock === 'number') ? c.available_stock : (c.available_stock ? Number(c.available_stock) : '-')
+
                           return (
                             <tr key={`${size}-${c.color || i}`} className="border-t">
                               {i === 0 && (
                                 <>
                                   <td rowSpan={colorsArr.length} className="p-2 align-top">{size}</td>
                                   <td rowSpan={colorsArr.length} className="p-2 align-top">
-                                    <Button size="sm" variant="ghost" className="text-xs" onClick={() => { setActiveSizeVariation(varItem); setActiveSizeName(size); setSizeDialogOpen(true) }}>尺碼詳情</Button>
+                                    <Button size="sm" variant="ghost" className="text-[10px]" onClick={() => { setActiveSizeVariation(varItem); setActiveSizeName(size); setSizeDialogOpen(true) }}>尺碼詳情</Button>
                                   </td>
                                 </>
                               )}
@@ -938,22 +998,24 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
                                   </span>
                                 </div>
                               </td>
-                              <td className="p-2 align-top">{stock}</td>
-                              <td className="p-2 align-top">{quota}</td>
+                              <td className="p-2 align-top">{rawStock}</td>
+                              <td className="p-2 align-top">{rawQuota}</td>
+                              <td className="p-2 align-top">{totalLocked}</td>
+                              <td className="p-2 align-top">{availableStock}</td>
                             </tr>
                           )
                         })
                      })}
                      {(!product.sizes || product.sizes.length === 0) && (
                        <tr>
-                         <td colSpan={4} className="p-3 text-sm text-gray-500">未有尺碼資料</td>
+                         <td colSpan={10} className="p-3 text-sm text-gray-500">未有尺碼資料</td>
                        </tr>
                      )}
                    </tbody>
                  </table>
                </div>
               <div className="mt-6 flex justify-center">
-                <Button variant="ghost" className="text-xs border-0 shadow-none" size="sm" onClick={openVariationDialog}>新增/更改變體</Button>
+                <Button variant="ghost" className="text-xs border-0 shadow-none bg-primary text-white" size="sm" onClick={openVariationDialog}>新增/更改變體</Button>
               </div>
              </div>
 
@@ -961,8 +1023,8 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
              <div className="mt-6 border-t pt-6">
                {/* Video input */}
                <div className="space-y-2">
-                 <Label className="text-sm font-medium flex items-center gap-2">
-                   <Video className="w-4 h-4" /> 影片
+                 <Label className="text-[10px] font-medium flex items-center gap-2">
+                   <Video className="w-3 h-3 " /> 影片
                  </Label>
                  {/* Video link is now managed by the backend; input removed. */}
                   {((product.videoUrl) || (product.reelsUrl) || previewUrl) && (
@@ -976,7 +1038,7 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
                             <video src={videoSrc} controls playsInline className="w-full h-full object-cover" />
                           </div>
                           <div className="ml-3 flex flex-col gap-2">
-                            <Button size="sm" variant="outline" onClick={() => videoInputRef.current?.click()}>更換影片</Button>
+                            <Button size="sm" variant="outline" className="text-xs bg-primary text-white w-[64px] h-[24px]" onClick={() => videoInputRef.current?.click()}>更換影片</Button>
                             {videoFile && (
                               <div className="text-xs text-gray-500">已選擇: {videoFile.name}</div>
                             )}
@@ -994,8 +1056,8 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
                  <div className="flex-1 min-w-0 overflow-x-auto">
                    <div className="flex space-x-3 py-2">
                      <div className="flex-shrink-0 w-24 h-24">
-                       <Button onClick={handleAddImage} variant="outline" size="sm" className="w-full h-full flex items-center justify-center">
-                         <Plus className="w-4 h-4 mr-2" /> 新增圖片
+                       <Button onClick={handleAddImage} variant="outline" size="sm" className="w-full h-full flex items-center justify-center text-xs bg-primary text-white">
+                         <Plus className="w-2 h-2" /> 新增圖片
                        </Button>
                      </div>
 
@@ -1067,7 +1129,7 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
         </div>
       </div>
 
-      {/* Lightbox */}
+      {/* Debug panel removed */}
       {/* Variation Editor Dialog */}
       <Dialog open={isVariationDialogOpen} onOpenChange={setIsVariationDialogOpen}>
         <DialogContent className="max-w-3xl w-[90vw]">
@@ -1079,8 +1141,8 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
             {localVariations.map((v, vi) => (
               <div key={vi} className="shadow rounded-md p-3">
                 <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-3">
-                    <Label className="text-xs">尺碼</Label>
+                  <div className="flex flex-col items-start gap-2">
+                    <Label className="text-[9px]">尺碼</Label>
                     <Input value={v.size || ''} onChange={e => updateVariationField(vi, 'size', e.target.value)} className="text-xs w-36" />
                   </div>
                   <div className="flex items-center gap-2">
@@ -1141,25 +1203,55 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
                 <div className="mt-2 space-y-2">
                  
                   {(v.colors || []).map((c: any, ci: number) => (
-                    <div key={ci} className="flex gap-2 items-center mb-2">
+                    <div key={ci} className="flex gap-2 items-center mb-2 flex-wrap">
                       <div className="flex flex-col">
                         <div className="text-[9px] text-gray-500 mb-1">顏色</div>
-                        <Input value={c.color || ''} onChange={e => updateColorField(vi, ci, 'color', e.target.value)} placeholder="顏色" className="text-xs w-20" />
+                        <Input value={c.color || ''} onChange={e => updateColorField(vi, ci, 'color', e.target.value)} placeholder="顏色" className="text-xs w-14" />
                       </div>
+
                       <div className="flex flex-col">
                         <div className="text-[9px] text-gray-500 mb-1">庫存</div>
-                        <Input value={String(c.stock ?? '')} onChange={e => updateColorField(vi, ci, 'stock', Number(e.target.value))} placeholder="庫存" type="text" inputMode="numeric" pattern="[0-9]*" className="text-xs w-20" />
+                        <Input
+                          value={String(c.raw_stock ?? c.stock ?? '')}
+                          onChange={e => updateColorField(vi, ci, 'raw_stock', Number(e.target.value || 0))}
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          className="text-xs w-10"
+                        />
                       </div>
+
                       <div className="flex flex-col">
-                        <div className="text-[9px] text-gray-500 mb-1">配額</div>
-                        <Input value={String(c.reels_quota ?? '')} onChange={e => updateColorField(vi, ci, 'reels_quota', Number(e.target.value))} placeholder="配額" type="text" inputMode="numeric" pattern="[0-9]*" className="text-xs w-20" />
+                        <div className="text-[9px] text-gray-500 mb-1">預售配額</div>
+                        <Input
+                          value={String(c.reels_quota ?? c.raw_quota ?? '')}
+                          onChange={e => updateColorField(vi, ci, 'reels_quota', Number(e.target.value || 0))}
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          className="text-xs w-10"
+                        />
                       </div>
-                      
+
+                     
+
+                      <div className="flex flex-col">
+                        <div className="text-[9px] text-gray-500 mb-1">訂單鎖定</div>
+                        <div className="text-xs">{typeof c.total_locked !== 'undefined' ? String(c.total_locked) : '-'}</div>
+                      </div>
+
+                     
+
+                      <div className="ml-2">
+                        <Button variant="ghost" size="icon" onClick={() => requestRemoveColor(vi, ci)}>
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                   <div>
-                    <Button size="sm" variant="ghost" className="text-xs" onClick={() => addColorToVariation(vi)}>
-                      <Plus className="w-4 h-4 mr-2" /> 新增顏色
+                    <Button size="sm" variant="ghost" className="text-xs text-[10px] text-primary" onClick={() => addColorToVariation(vi)}>
+                      <Plus className="w-2 h-2" /> 新增顏色
                     </Button>
                   </div>
                   
@@ -1167,11 +1259,11 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
               </div>
             ))}
 
-            <div className="flex justify-between items-center">
-              <Button size="sm" variant="ghost"  onClick={addVariation}><Plus className="w-4 h-4 mr-2 text-xs" />新增變體</Button>
+            <div className="flex flex-col gap-4 items-center ">
+              <Button size="sm" variant="ghost"  onClick={addVariation} className="text-[10px] bg-primary text-white"><Plus className="w-2 h-2" />新增變體</Button>
               <div className="flex gap-2">
                
-                <Button size="sm" onClick={saveVariations}><Save className="w-4 h-4 mr-2" />儲存</Button>
+                <Button size="sm" onClick={saveVariations}><Save className="w-4 h-4" />儲存</Button>
               </div>
             </div>
           </div>
@@ -1206,9 +1298,7 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
               <div className="space-y-2">
                 {(activeSizeVariation?.colors || []).map((c: any, idx: number) => (
                   <div key={idx} className="flex items-center justify-between text-sm">
-                   
-                    <div className="text-gray-500">庫存: {typeof c.stock === 'number' ? c.stock : (c.stock ? Number(c.stock) : '-')}</div>
-                    <div className="text-gray-500">配額: {typeof c.reels_quota === 'number' ? c.reels_quota : (c.reels_quota ? Number(c.reels_quota) : '-')}</div>
+                    <div className="text-gray-500">顏色: {c.color || '-'}</div>
                   </div>
                 ))}
                 {(!activeSizeVariation?.colors || activeSizeVariation.colors.length === 0) && (
