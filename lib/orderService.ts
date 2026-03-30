@@ -503,6 +503,53 @@ export async function getRestockAllocationData(
 }
 
 /**
+ * Fetch SKU restock details via RPC `get_sku_restock_details(p_sku_id BIGINT)`.
+ * Normalizes the response to include `variation_breakdown` and `related_orders` arrays.
+ */
+export async function getSkuRestockDetails(
+  p_sku_id: number | string
+): Promise<any> {
+  const id = typeof p_sku_id === 'string' ? Number(p_sku_id) : p_sku_id
+  const { data, error } = await supabase.rpc('get_sku_restock_details', {
+    p_sku_id: id,
+  })
+
+  if (error) {
+    console.error('get_sku_restock_details RPC error:', error)
+    throw new Error(error.message)
+  }
+
+  let payload: any = data
+  if (Array.isArray(data) && data.length > 0 && data[0].get_sku_restock_details) payload = data[0].get_sku_restock_details
+  else if (data && data.get_sku_restock_details) payload = data.get_sku_restock_details
+
+  const variationList = (payload?.variation_breakdown || []).map((v: any) => ({
+    variation_id: v.variation_id,
+    size_name: v.size_name,
+    color: v.color,
+    needed: v.needed ?? 0,
+    thumbnail: v.thumbnail,
+  }))
+
+  const mappedOrders = (payload?.related_orders || []).map((o: any, idx: number) => ({
+    id: (o.order_number || o.order_no || String(idx)),
+    orderNumber: o.order_number || o.order_no || String(idx),
+    customerName: o.customer_name || o.name || '',
+    itemsNeeded: o.items_needed_for_this_sku ?? o.items_needed ?? 0,
+    quantity: o.items_needed_for_this_sku ?? o.items_needed ?? 0,
+    totalItems: o.total_items_in_order ?? o.total_items ?? 0,
+    whatsapp: o.whatsapp,
+    customerId: o.customer_id,
+  }))
+
+  return {
+    variation_breakdown: variationList,
+    related_orders: mappedOrders,
+    raw: payload,
+  }
+}
+
+/**
  * Process bulk restock via RPC `process_bulk_restock(p_payload JSONB[])`.
  * Accepts an array of payload entries and returns the RPC result.
  */

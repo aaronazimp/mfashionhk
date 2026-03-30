@@ -342,7 +342,7 @@ export default function ProductDrawer({ id, open, onOpenChange }: Props) {
               <div className="px-4 py-3">
                 <div className="text-[10px] text-zinc-700 mb-2 text-center">選擇尺寸與顏色</div>
                 {tableSizes.length === 0 || tableColors.length === 0 ? (
-                  <div className="text-zinc-500">單一尺寸 / 顏色</div>
+                  <div className="text-zinc-500 text-sm text-center mt-9">已售罄</div>
                 ) : (
                   <div className="space-y-3">
                     {/* Size chips */}
@@ -447,21 +447,23 @@ export default function ProductDrawer({ id, open, onOpenChange }: Props) {
               )}
             </div>
 
-            {/* Bottom fixed add-to-cart */}
-            <div className="fixed left-0 right-0 bottom-4 px-4 z-30">
-              <div className="max-w-lg mx-auto">
-                <div className="flex justify-center">
-                  <button
-                    onClick={handleAddToCart}
-                    disabled={buyDisabled}
-                    aria-disabled={buyDisabled}
-                    className={`mx-auto w-48 rounded-xl py-3 text-sm ${buyDisabled ? 'bg-zinc-200 text-zinc-500 cursor-not-allowed' : 'bg-primary text-white'}`}
-                  >
-                    {isAddingToCart ? '加入中…' : '立即購買'}
-                  </button>
+            {/* Bottom fixed add-to-cart (hidden when no variations returned) */}
+            {(groupedVariations.length === 0 && variations.length === 0) ? null : (
+              <div className="fixed left-0 right-0 bottom-4 px-4 z-30">
+                <div className="max-w-lg mx-auto">
+                  <div className="flex justify-center">
+                    <button
+                      onClick={handleAddToCart}
+                      disabled={buyDisabled}
+                      aria-disabled={buyDisabled}
+                      className={`mx-auto w-48 rounded-xl py-3 text-sm ${buyDisabled ? 'bg-zinc-200 text-zinc-500 cursor-not-allowed' : 'bg-primary text-white'}`}
+                    >
+                      {isAddingToCart ? '加入中…' : '立即購買'}
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         </DrawerContent>
         {/* Fullscreen handled by global ImageFullscreen; local overlay removed. */}

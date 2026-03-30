@@ -72,6 +72,9 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
         size: sizeName ?? c.size ?? undefined,
         color: c.color ?? c.color_name ?? undefined,
         waitlist: Number(c.waitlist_count ?? c.waitlist ?? 0),
+        // new RPC fields
+        ordered_qty: Number(c.ordered_qty ?? c.orderedQty ?? 0),
+        orders_count: Number(c.orders_count ?? c.ordersCount ?? 0),
         current_stock: Number(c.current_stock ?? c.currentStock ?? 0),
         reels_quota: (() => {
           const rq = c.reels_quota ?? c.reelsQuota;
@@ -98,6 +101,8 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
   const [restockAmounts, setRestockAmounts] = useState<Record<string, number>>({});
   const [restockPayloadMap, setRestockPayloadMap] = useState<Record<string, { variation_id: number | string; restock_amount: number; order_ids: string[] }>>({});
   const [quotaFromRpc, setQuotaFromRpc] = useState<Record<string, number | undefined>>({});
+  const [rpcPayload, setRpcPayload] = useState<any | null>(null);
+  const [showRpcDebug, setShowRpcDebug] = useState<boolean>(false);
 
   useEffect(() => {
     if (!isOpen) {
@@ -145,6 +150,8 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
         if (Array.isArray(data) && data.length > 0 && data[0].get_restock_allocation_data) payload = data[0].get_restock_allocation_data;
         else if (data.get_restock_allocation_data) payload = data.get_restock_allocation_data;
         // RPC returns a `sizes` array with nested `colors`.
+        // keep a copy of the raw payload for debug inspection
+        setRpcPayload(payload);
         // capture main preview image if present
         const mainPreview = payload?.main_preview_image ?? payload?.mainPreviewImage ?? null;
         if (mainPreview) setPreviewImage(String(mainPreview));
@@ -159,6 +166,9 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
               size: sizeName ?? c.size ?? undefined,
               color: c.color ?? c.color_name ?? undefined,
               waitlist: Number(c.waitlist_count ?? c.waitlist ?? 0),
+              // new RPC fields
+              ordered_qty: Number(c.ordered_qty ?? c.orderedQty ?? 0),
+              orders_count: Number(c.orders_count ?? c.ordersCount ?? 0),
               // preserve RPC fields for UI display (ensure numbers)
               current_stock: Number(c.current_stock ?? c.currentStock ?? 0),
               reels_quota: (() => {
@@ -195,6 +205,9 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
               size: v.size ?? v.size_name ?? undefined,
               color: v.color ?? v.color_name ?? undefined,
               waitlist: Number(v.waitlist_count ?? v.waitlist ?? 0),
+              // new RPC fields
+              ordered_qty: Number(v.ordered_qty ?? v.orderedQty ?? 0),
+              orders_count: Number(v.orders_count ?? v.ordersCount ?? 0),
               current_stock: Number(v.current_stock ?? v.current_qty ?? 0),
               reels_quota: (() => {
                 const rq = v.reels_quota ?? v.reelsQuota;
@@ -218,6 +231,8 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
             // also try to set preview from fallback payload
             const mainPreviewFallback = payload?.main_preview_image ?? payload?.mainPreviewImage ?? null;
             if (mainPreviewFallback) setPreviewImage(String(mainPreviewFallback));
+            // store fallback payload too
+            setRpcPayload(payload);
           }
         }
       } catch (err) {
@@ -552,9 +567,13 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
                         <th className="text-center">尺寸</th>
                         <th className="text-center">顏色</th>
                         <th className="text-center">庫存</th>
+                        
                         <th className="text-center">配額</th>
-                        <th className="text-center">番貨數量</th>
+                       
+                        <th className="text-center">訂單鎖定</th>
+                        <th className="text-center">可用庫存</th>
                         <th className="text-center">候補</th>
+                         <th className="text-center">番貨數量</th>
                       </tr>
                     </thead>
                     <tbody className="align-top">
@@ -563,8 +582,14 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
                           <td className="py-3 text-[10px] text-center">{r.size}</td>
                           <td className="py-3 text-[10px] text-center">{r.color}</td>
                           <td className="py-3 text-[10px] text-center">{r.currentQty}</td>
+                          
                           <td className="py-3 text-[10px] text-center">{r.current_quota}</td>
-                          <td className="py-3 text-[10px] text-center">
+                         
+                          <td className="py-3 text-[10px] text-center">{r.available_qty}</td>
+                          
+                          <td className="py-3 text-[10px] text-center">{r.ordered_qty}</td>
+                          <td className="py-3 text-[10px] text-center">{r.waitlist}</td>
+                           <td className="py-3 text-[10px] text-center">
                             <Input
                               type="text"
                               inputMode="numeric"
@@ -577,7 +602,6 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
                               }}
                             />
                           </td>
-                          <td className="py-3 text-[10px] text-center">{r.waitlist}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -865,6 +889,20 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
         </div>
 
         {/* debug panel removed */}
+        <div className="mt-4">
+          <button
+            type="button"
+            className="text-xs text-gray-500 underline"
+            onClick={() => setShowRpcDebug((s) => !s)}
+          >
+            {showRpcDebug ? '隱藏 RPC 輸出' : '顯示 RPC 輸出'}
+          </button>
+          {showRpcDebug && (
+            <div className="mt-2 max-h-64 overflow-auto text-xs bg-gray-100 p-2 rounded">
+              <pre className="whitespace-pre-wrap break-words">{JSON.stringify(rpcPayload, null, 2)}</pre>
+            </div>
+          )}
+        </div>
 
         <AlertDialogFooter />
       </AlertDialogContent>

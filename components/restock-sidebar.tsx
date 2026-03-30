@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import Image from "next/image";
 import ImageFullscreen from "./ImageFullscreen";
 import { SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
-import { supabase } from "@/lib/supabase";
+import { getSkuRestockDetails } from '@/lib/orderService';
 import type { Product } from "@/lib/products";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -65,14 +65,9 @@ export default function RestockSidebar({ product }: Props) {
     setLoading(true);
     try {
       const skuId = parseInt(String(product?.id || ""));
-      const { data, error } = await supabase.rpc("get_sku_restock_details", { p_sku_id: skuId });
-      if (error) throw error;
+      const res = await getSkuRestockDetails(skuId);
 
-      let payload: any = data;
-      if (Array.isArray(data) && data.length > 0 && data[0].get_sku_restock_details) payload = data[0].get_sku_restock_details;
-      else if (data.get_sku_restock_details) payload = data.get_sku_restock_details;
-
-      const variationList: VariationBreakdown[] = (payload.variation_breakdown || []).map((v: any) => ({
+      const variationList: VariationBreakdown[] = (res?.variation_breakdown || []).map((v: any) => ({
         variation_id: v.variation_id,
         size_name: v.size_name,
         color: v.color,
@@ -80,15 +75,15 @@ export default function RestockSidebar({ product }: Props) {
         thumbnail: v.thumbnail,
       }));
 
-      const mappedOrders: OrderItem[] = (payload.related_orders || []).map((o: any, idx: number) => ({
-        id: (o.order_number || o.order_no || String(idx)),
-        orderNumber: o.order_number || o.order_no || String(idx),
-        customerName: o.customer_name || o.name || '',
-        itemsNeeded: o.items_needed_for_this_sku ?? o.items_needed ?? 0,
-        quantity: o.items_needed_for_this_sku ?? o.items_needed ?? 0,
-        totalItems: o.total_items_in_order ?? o.total_items ?? 0,
+      const mappedOrders: OrderItem[] = (res?.related_orders || []).map((o: any, idx: number) => ({
+        id: (o.orderNumber || o.order_number || o.order_no || String(idx)),
+        orderNumber: o.orderNumber || o.order_number || o.order_no || String(idx),
+        customerName: o.customerName || o.customer_name || o.name || '',
+        itemsNeeded: o.itemsNeeded ?? o.items_needed_for_this_sku ?? o.items_needed ?? 0,
+        quantity: o.quantity ?? o.itemsNeeded ?? o.items_needed_for_this_sku ?? o.items_needed ?? 0,
+        totalItems: o.totalItems ?? o.total_items_in_order ?? o.total_items ?? 0,
         whatsapp: o.whatsapp,
-        customerId: o.customer_id,
+        customerId: o.customerId ?? o.customer_id,
       }));
 
       setVariations(variationList);

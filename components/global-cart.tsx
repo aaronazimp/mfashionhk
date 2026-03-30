@@ -127,19 +127,15 @@ export function GlobalCart() {
                     return;
                 }
                 const diff = exp - now;
-                                if (diff <= 0) {
-                                        newTimers[id] = "0000";
-                                        // Only treat as an "expiration event" the first time it becomes expired
-                                        if (!expiredReportedRef.current.has(id)) {
-                                            anyExpired = true;
-                                            expiredReportedRef.current.add(id);
-                                        }
-                                } else {
-                    const mm = Math.floor(diff / 60000);
-                    const ss = Math.floor((diff % 60000) / 1000);
-                    const mmStr = String(mm).padStart(2, "0");
-                    const ssStr = String(ss).padStart(2, "0");
-                    newTimers[id] = `${mmStr}${ssStr}`;
+                    if (diff <= 0) {
+                        newTimers[id] = "0";
+                        if (!expiredReportedRef.current.has(id)) {
+                            anyExpired = true;
+                            expiredReportedRef.current.add(id);
+                        }
+                    } else {
+                        const secs = Math.floor(diff / 1000);
+                        newTimers[id] = String(secs);
                 }
             });
 
@@ -307,8 +303,9 @@ export function GlobalCart() {
             customerInfo.address
         );
 
-        // If reserved_count > 0, redirect to payment page
-        const reservedCount = (data as any)?.reserved_count ?? 0;
+        // If reserved_count (or payable_count) > 0, redirect to payment page
+        // Some RPC responses use `payable_count` instead of `reserved_count`.
+        const reservedCount = (data as any)?.reserved_count ?? (data as any)?.payable_count ?? 0;
         if (reservedCount > 0) {
             // Prefer redirecting to transaction-based payment when backend hints so
             const redirectHint = (data as any)?.redirect_hint || null;
@@ -323,13 +320,7 @@ export function GlobalCart() {
             if (redirectHint === 'payment' && transactionId) {
                 // Redirect to payment using transaction id when requested by RPC
                 router.push(`/pay/${encodeURIComponent(String(transactionId))}`);
-            } else if (orderNumber) {
-                router.push(`/pay/${encodeURIComponent(String(orderNumber))}`);
-            } else if (orderId) {
-                router.push(`/pay/${orderId}`);
-            } else {
-                router.push(`/pay`);
-            }
+            } 
             return;
         }
 
@@ -483,7 +474,11 @@ export function GlobalCart() {
                                         )}
                                         {/* ...existing code... */}
                                         {cartItems.map((item) => (
-                                            <div key={(item as any).cart_item_id ?? (item as any).id} className="bg-white p-4 rounded-lg flex items-stretch gap-4 relative group border border-zinc-100 shadow-sm hover:shadow-md">
+                                            (() => {
+                                                const status = (item as any).status;
+                                                const isExpired = status === 'expired';
+                                                return (
+                                                    <div key={(item as any).cart_item_id ?? (item as any).id} className={`${isExpired ? 'bg-zinc-50 border-zinc-200 text-zinc-500 opacity-80' : 'bg-white border-zinc-100 shadow-sm hover:shadow-md'} p-4 rounded-lg flex items-stretch gap-4 relative group`}>
                                                 <div className="w-24 h-full rounded-md overflow-hidden bg-white shrink-0 flex-shrink-0">
                                                     {((item as any).main_image) ? (
                                                         <img
@@ -501,23 +496,23 @@ export function GlobalCart() {
                                                         <div className="flex items-center gap-2">
                                                             <div className="font-bold text-xs">{(item as any).SKU}</div>
                                                             {(() => {
-                                                                const text = (item as any).status === 'reserved'
-                                                                    ? '現貨'
-                                                                    : (item as any).status === 'waitlist'
-                                                                        ? '預訂'
-                                                                        : (item as any).status;
+                                                                const status = (item as any).status;
+                                                                // Do not render a badge for waitlist items
+                                                                if (status === 'waitlist') return null;
+                                                                const text = status === 'reserved' ? '現貨' : status === 'expired' ? '過期取消' : status;
+                                                                const statusClass = status === 'reserved'
+                                                                    ? 'text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700'
+                                                                    : status === 'expired'
+                                                                        ? 'text-xs px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-500'
+                                                                        : 'text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800';
                                                                 return (
-                                                                    <div className={
-                                                                        (item as any).status === 'reserved'
-                                                                            ? 'text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700'
-                                                                            : 'text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800'
-                                                                    }>{text}</div>
+                                                                    <div className={statusClass}>{text}</div>
                                                                 );
                                                             })()}
                                                         </div>
                                                         <button
                                                             onClick={() => removeItem((item as any).cart_item_id ?? (item as any).id)}
-                                                            className="text-zinc-400 hover:text-red-500 p-1"
+                                                            className={`${(item as any).status === 'expired' ? 'text-zinc-300 p-1' : 'text-zinc-400 hover:text-red-500 p-1'}`}
                                                         >
                                                             <Lucide.X className="w-4 h-4" />
                                                         </button>
@@ -528,8 +523,8 @@ export function GlobalCart() {
                                                    </div>
                                                     <div className="mt-2">
                                                         <div className="flex justify-end items-center">
-                                                            
-                                                             <div className={`text-sm mt-1 ${ (item as any).is_cart_addon === true ? 'line-through text-zinc-400' : 'text-black font-bold' }`}>${(item as any).regular_price}</div>
+                                                             
+                                                              <div className={`text-sm font-bold mt-1 ${ (item as any).status === 'expired' ? 'text-zinc-400' : (item as any).is_cart_addon === true ? 'line-through text-zinc-400' : 'text-black font-bold' }`}>${(item as any).regular_price}</div>
                                                             
                                                         </div>
                                                       <div className="flex justify-end gap-2 items-center">
@@ -537,7 +532,7 @@ export function GlobalCart() {
                                                         <div className="text-[10px] text-amber-700 mt-1">{(item as any).remark}</div>
                                                     )}
                                                        {(item as any).is_cart_addon !== false && (
-                                                           <div className="text-sm font-bold text-[color:var(--color-primary)]">${(item as any).effective_price}</div>
+                                                           <div className={`${(item as any).status === 'expired' ? 'text-sm font-bold text-zinc-400' : 'text-sm font-bold text-[color:var(--color-primary)]'}`}>${(item as any).effective_price}</div>
                                                        )}
                                                        </div>
                                                     </div>
@@ -549,14 +544,22 @@ export function GlobalCart() {
                                                                 {(() => {
                                                                     const raw = itemTimers[String((item as any).cart_item_id ?? (item as any).id)];
                                                                     if (!raw) return "--:--";
-                                                                    if (raw.length >= 4) return `${raw.slice(0, 2)}:${raw.slice(2)}`;
-                                                                    return raw;
+                                                                    const secs = parseInt(raw, 10);
+                                                                    if (isNaN(secs) || secs <= 0) return "0:00:00";
+                                                                    const h = Math.floor(secs / 3600);
+                                                                    const m = Math.floor((secs % 3600) / 60);
+                                                                    const s = secs % 60;
+                                                                    const mStr = String(m).padStart(2, "0");
+                                                                    const sStr = String(s).padStart(2, "0");
+                                                                    return `${h}:${mStr}:${sStr}`;
                                                                 })()}
                                                             </div>
                                                         </div>
                                                     )}
                                                 </div>
-                                            </div>
+                                                    </div>
+                                                );
+                                            })()
                                         ))}
 
                                         <div className="border-t pt-4 flex justify-between items-center font-bold text-md">

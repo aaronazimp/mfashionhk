@@ -8,12 +8,14 @@ export interface WaitlistOrder {
 }
 
 export interface RestockColor {
-  color: string
-  reels_quota: number
+  color: string 
+  ordered_qty?: number
+  reels_quota: number 
+  orders_count?: number
   variation_id: number
   current_stock: number
-  waitlist_count: number
-  waitlist_orders: WaitlistOrder[]
+  waitlist_count?: number
+  available_qty?: number
   [key: string]: any
 }
 
@@ -27,6 +29,9 @@ export interface RestockSku {
   sku_code: string
   main_preview_image?: string | null
   total_orders_count?: number
+  // new RPC field name for total ordered across SKU
+  total_sku_ordered?: number
+  // keep legacy field for backwards-compat
   total_sku_waitlist?: number
   total_variation_count?: number
   [key: string]: any
@@ -38,6 +43,12 @@ export interface RestockVariation {
   size?: string
   color: string
   current_stock: number
+  // number of items ordered for this variation (new RPC)
+  ordered_qty?: number
+  // aggregated orders count for this variation (new RPC)
+  orders_count?: number
+  // available quantity reported by RPC
+  available_qty?: number
   current_quota?: number
   reels_quota?: number
   waitlist_count?: number
