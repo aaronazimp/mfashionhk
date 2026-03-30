@@ -4,6 +4,7 @@ import { Merriweather } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { Toaster } from "@/components/ui/toaster"
 import { GlobalCart } from "@/components/global-cart"
+import { Suspense } from 'react'
 import './globals.css'
 import NoConsole from "@/components/NoConsole"
 
@@ -46,7 +47,9 @@ export default function RootLayout({
 
         <Analytics />
         <Toaster />
-        <GlobalCart />
+        <Suspense fallback={<div />}>
+          <GlobalCart />
+        </Suspense>
       </body>
     </html>
   )
