@@ -26,6 +26,7 @@ export default function OrderDetailsModal({ open, onOpenChange, customerId, prio
   const [loading, setLoading] = useState(false)
   const [payload, setPayload] = useState<RpcResponse | null>(null)
   const [currentIndex, setCurrentIndex] = useState(0)
+  
   const router = useRouter()
 
 
@@ -60,6 +61,8 @@ export default function OrderDetailsModal({ open, onOpenChange, customerId, prio
                 quantity: it.quantity,
                 sku_code: it.sku_code,
                 thumbnail: it.main_image,
+                // preserve waitlist / preorder indicators from RPC
+                is_waitlist_item: it.is_waitlist_item ?? it.is_waitlist ?? it.isWaitlist ?? it['#sym:is_waitlist_item'] ?? it['sym:is_waitlist_item'] ?? (it.sym && (it.sym.is_waitlist_item ?? it.sym.isWaitlist)),
                 variation: it.variation_text,
               }))
 
@@ -91,6 +94,8 @@ export default function OrderDetailsModal({ open, onOpenChange, customerId, prio
               quantity: it.quantity,
               sku_code: it.sku_code,
               thumbnail: it.main_image,
+              // preserve waitlist / preorder indicators from RPC
+              is_waitlist_item: it.is_waitlist_item ?? it.is_waitlist ?? it.isWaitlist ?? it['#sym:is_waitlist_item'] ?? it['sym:is_waitlist_item'] ?? (it.sym && (it.sym.is_waitlist_item ?? it.sym.isWaitlist)),
               variation: it.variation_text,
             }))
 
@@ -366,23 +371,25 @@ export default function OrderDetailsModal({ open, onOpenChange, customerId, prio
                     if (total === 0) return <div className="text-center py-8 text-gray-400">沒有相關訂單</div>
                     const page = pagesList[currentIndex]
                     return (
-                      <div>
+                      
                        
 
-                        <div className="rounded-2xl overflow-hidden  max-w-[400px]">
-                          <div className="bg-white mb-4 ">
+                        <div className="rounded-2xl overflow-hidden max-w-[400px] mx-auto">
+                          <div className="bg-white mb-4 flex flex-col items-center">
                             {(page?.orders || []).map((order) => (
                               <OrderCard key={order.order_number} order={order as any} statusBadge={(s) => <OrderStatusBadge status={s as string} />} />
                             ))}
                           </div>
                         </div>
                         
-                      </div>
+                     
                     )
                   })()}
             </div>
           )}
         </div>
+
+        
 
         {/* Pagination dots fixed above footer */}
         {pages && pages.length > 0 && (

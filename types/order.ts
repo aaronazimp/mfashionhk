@@ -8,14 +8,26 @@ export interface WaitlistOrder {
 }
 
 export interface RestockColor {
-  color: string 
+  color: string
+  // number of items ordered for this color/variation (RPC)
   ordered_qty?: number
-  reels_quota: number 
+  // quota assigned for reels
+  reels_quota: number
+  // aggregated orders count for this variation (RPC)
   orders_count?: number
   variation_id: number
+  // current physical stock for this variation
   current_stock: number
   waitlist_count?: number
+  // available quantity reported by RPC (may be 0)
   available_qty?: number
+  // quantity currently on the waitlist for this variation
+  waitlist_qty?: number
+  // quantity already confirmed for this variation
+  confirmed_qty?: number
+  // counts of orders on waitlist / confirmed
+  waitlist_orders_count?: number
+  confirmed_orders_count?: number
   [key: string]: any
 }
 
@@ -42,17 +54,26 @@ export interface RestockVariation {
   variation_id: number
   size?: string
   color: string
+  // current physical stock for this variation (RPC)
   current_stock: number
-  // number of items ordered for this variation (new RPC)
+  // number of items ordered for this variation (RPC)
   ordered_qty?: number
-  // aggregated orders count for this variation (new RPC)
+  // aggregated orders count for this variation (RPC)
   orders_count?: number
   // available quantity reported by RPC
   available_qty?: number
+  // quantity currently on the waitlist for this variation
+  waitlist_qty?: number
+  // quantity already confirmed for this variation
+  confirmed_qty?: number
+  // counts of orders on waitlist / confirmed
+  waitlist_orders_count?: number
+  confirmed_orders_count?: number
   current_quota?: number
   reels_quota?: number
   waitlist_count?: number
   // keep legacy aliases for older UI code
+  // `id` is a string in UI code (use string to avoid casting at call sites)
   id: string
   currentQty?: number
   waitlist?: number
@@ -60,6 +81,27 @@ export interface RestockVariation {
   // newer field matching RPC
   waitlist_orders?: WaitlistOrder[]
 }
+
+// Wrapper shape returned by the RPC: an array of objects each containing
+// `get_restock_allocation_data` with the allocation payload.
+export interface RestockAllocationData {
+  sizes: RestockSize[]
+  sku_code: string
+  main_preview_image?: string | null
+  // counts across the SKU
+  total_variation_count?: number
+  total_sku_waitlist_qty?: number
+  total_sku_confirmed_qty?: number
+  total_waitlist_orders_count?: number
+  total_confirmed_orders_count?: number
+  [key: string]: any
+}
+
+export interface RestockAllocationItem {
+  get_restock_allocation_data: RestockAllocationData
+}
+
+export type RestockAllocationResponse = RestockAllocationItem[]
 
 export interface OrderLineItem {
   line_item_id?: string
@@ -92,6 +134,7 @@ export interface OrderLineItem {
   sku_code?: string
   variation_text?: string
   main_image?: string | null
+  is_waitlist_item?: boolean
   // UI-friendly aliases
   thumbnail?: string | null
   imageUrl?: string | null
@@ -269,6 +312,7 @@ export type Item = {
   main_image?: string | null
   variation?: string | null
   variation_text?: string | null
+  is_waitlist_item?: boolean
 }
 
 export type Order = {

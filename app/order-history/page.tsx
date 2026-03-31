@@ -48,7 +48,7 @@ export default async function OrderHistoryPage({ searchParams }: Props) {
   } catch (err: any) {
     return (
       <div className="p-6">
-        <h1 className="text-2xl font-semibold">訂單記錄</h1>
+        <h1 className="text-sm font-semibold">訂單記錄</h1>
         <p className="mt-4 text-red-600">無法加載訂單: {err?.message ?? String(err)}</p>
       </div>
     )
@@ -58,7 +58,7 @@ export default async function OrderHistoryPage({ searchParams }: Props) {
 
   return (
     <div className="p-6 max-w-[90vw] mx-auto">
-      <h1 className="text-sm font-semibold mb-4 text-center">訂單記錄</h1>
+      <h1 className="text-sm font-semibold mb-9 text-center">訂單記錄</h1>
       <p className="text-sm font-bold">交易編號: {payload.transaction_id}</p>
       <div className="flex-col gap-2 mt-2">
       <p className="text-xs mb-2">顧客名稱: { payload.customer_name} | WhatsApp: {payload.whatsapp} </p>
@@ -69,12 +69,12 @@ export default async function OrderHistoryPage({ searchParams }: Props) {
           {history.length === 0 && <div>未找到訂單</div>}
 
           {history.map((order: any) => (
-            <div key={order.base_order_no} className="w-[350px] overflow-hidden shadow-xl">
+            <div key={order.base_order_no} className="w-[350px] overflow-hidden shadow-xl rounded-2xl">
               <div className="bg-primary text-white text-center text-xs rounded-t-2xl py-2">
                 <span>訂單# {order.base_order_no}</span>
               </div>
-              <div className="p-2 bg-white">
-                <OrderCardReadOnly order={order} hideHeader className=" rounded-none shadow-none" />
+              <div className="p-2 bg-white items-center justify-start flex">
+                <OrderCardReadOnly order={order} hideHeader className=" rounded-2xl shadow-none " />
               </div>
             </div>
           ))}

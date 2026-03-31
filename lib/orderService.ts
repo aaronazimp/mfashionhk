@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase'; // Adjust this path to your Supabase 
 
 import type { OrderLineItem, OrderGroup, ActiveCustomerRecords, CustomerOrderHistoryResponse, MasterOrderRow, MasterOrderListResponse, PaginationMetadata, MasterOrderItem } from '@/types/order'
 import type { CustomerOrdersResponse } from '@/types/orders'
-import type { SingleSkuDetails } from '@/lib/products'
+import type { SingleSkuDetails, Product } from '@/lib/products'
 
 
 // Also in src/services/orderService.ts
@@ -405,6 +405,50 @@ export async function getCartAndUpsellItems(
   }
 
   return data
+}
+
+/**
+ * Fetch restock dashboard via RPC `get_restock_dashboard` and map to Product shape.
+ */
+export async function getRestockDashboard(
+  p_search_term: string = '',
+  p_filter_type: string = 'action_required',
+  p_page: number = 1,
+  p_per_page: number = 50
+): Promise<{ products: Product[]; counts: Record<string, number>; metadata: any | null }> {
+  const { data, error } = await supabase.rpc('get_restock_dashboard', {
+    p_search_term,
+    p_filter_type,
+    p_page,
+    p_per_page,
+  })
+
+  if (error) {
+    console.error('get_restock_dashboard RPC error:', error)
+    throw new Error(error.message)
+  }
+
+  const rows: any[] = Array.isArray(data) ? data : (data?.data ?? [])
+  const metadata = data && !Array.isArray(data) ? data.metadata ?? null : null
+
+  const products: Product[] = rows.map((row: any) => ({
+    id: String(row.sku_id),
+    sku: row.sku_code,
+    name: row.sku_code || '',
+    price: 0,
+    description: '',
+    images: [row.main_image || '/placeholder.svg'],
+    colors: [],
+    sizes: [],
+    category: '',
+  }))
+
+  const counts: Record<string, number> = {}
+  rows.forEach((row: any) => {
+    counts[String(row.sku_id)] = row.total_sku_waitlist_count ?? 0
+  })
+
+  return { products, counts, metadata }
 }
 
 /**

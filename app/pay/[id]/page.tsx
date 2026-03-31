@@ -26,12 +26,15 @@ async function getOrder(id: string): Promise<PaymentPageOrder | null> {
     return null;
   }
 
+  // Create a Supabase client lazily so we don't initialize at module import time
   const supabase = createClient(url, key);
+
+  
 
   // Call the server-side RPC which centralises payment-summary logic
   let rpcData: any = null;
   try {
-    rpcData = await getPaymentPageData(id, supabase);
+    rpcData = await getPaymentPageData(id);
     console.log("Supabase RPC get_payment_page_data return:", rpcData);
   } catch (err: any) {
     console.warn("RPC get_payment_page_data error:", err);

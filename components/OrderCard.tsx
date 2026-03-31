@@ -4,6 +4,9 @@ import React, { useEffect, useRef, useState } from 'react'
 import * as Lucide from 'lucide-react'
 import Image from 'next/image'
 import ImageFullscreen from './ImageFullscreen'
+import { Sheet, SheetContent } from '@/components/ui/sheet'
+import RestockSidebar from './restock-sidebar'
+import type { Product } from '@/lib/products'
 
 import type { OCItem, OCOrder } from '@/types/order'
 import { cancelOrderItem, markOrderItemPrePendingToShip, markOrderItemVerified } from '@/lib/orderService'
@@ -34,12 +37,14 @@ type Props = {
   className?: string
   compact?: boolean
   statusBadge?: (status?: string) => React.ReactNode
+  // when false, suppress the auto '預購' badge even if item is waitlist/preorder
+  showPreorderBadge?: boolean
   onItemStatusChange?: (itemId: string, newStatus: string, meta?: { source?: string }) => void
   overlays?: { translates?: Record<string, string>; revealed?: Record<string, 'left' | 'right' | false> }
   onOverlaysChange?: (ov: { translates: Record<string, string>; revealed: Record<string, 'left' | 'right' | false> }) => void
 }
 
-export default function OrderCard({ order, className = '', compact = false, statusBadge, onItemStatusChange, overlays, onOverlaysChange }: Props) {
+export default function OrderCard({ order, className = '', compact = false, statusBadge, showPreorderBadge = true, onItemStatusChange, overlays, onOverlaysChange }: Props) {
   const [items, setItems] = useState<OCItem[]>(order.items || [])
   const startXRef = useRef<number | null>(null)
   const startYRef = useRef<number | null>(null)
@@ -54,6 +59,8 @@ export default function OrderCard({ order, className = '', compact = false, stat
   const [fsOpen, setFsOpen] = useState(false)
   const [fsSrc, setFsSrc] = useState('')
   const [fsAlt, setFsAlt] = useState('')
+  const [restockSidebarOpen, setRestockSidebarOpen] = useState(false)
+  const [restockProduct, setRestockProduct] = useState<Product | null>(null)
   const _clearOverlayLastSentRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -268,11 +275,16 @@ export default function OrderCard({ order, className = '', compact = false, stat
     // and whether leftward swipes (reveal right overlay / cancel) are permitted.
     let isVerified = false
     let allowRightToLeft = false
+    let isPreorderBadge = false
     try {
       const it = items[idx]
       const s = String((it as any)?.status ?? '').toLowerCase().trim().replace(/[-_]/g, '')
       isVerified = s === 'verified'
       allowRightToLeft = s === 'waitlist' || s === 'confirmed'
+      const maybe = (it as any) || {}
+      const isWaitlist = !!(maybe.is_waitlist_item || maybe.isWaitlist || maybe.is_waitlist)
+      const norm = s
+      isPreorderBadge = showPreorderBadge && (isWaitlist || norm === 'preorder' || norm === 'preordered' || norm === 'prependingtoship' || /pre.*order/.test(norm))
     } catch (e) {
       // ignore
     }
@@ -284,9 +296,9 @@ export default function OrderCard({ order, className = '', compact = false, stat
       setTranslates((s) => ({ ...s, [idx]: `${tx}px` }))
     } else if (deltaX > 0) {
       // Only allow rightward movement (revealing the left overlay) when the
-      // item is currently `verified`. Otherwise ignore rightward drags so the
-      // action can't be revealed.
-      if (isVerified) {
+      // item is currently `verified` and not a preorder item. Otherwise ignore
+      // rightward drags so the action can't be revealed.
+      if (isVerified && !isPreorderBadge) {
         const tx = Math.min(deltaX, measured)
         setTranslates((s) => ({ ...s, [idx]: `${tx}px` }))
       }
@@ -361,6 +373,15 @@ export default function OrderCard({ order, className = '', compact = false, stat
     const _it = items[idx]
     const _s = String((_it as any)?.status ?? '').toLowerCase().trim().replace(/[-_]/g, '')
     const _isPrePendingToShip = _s === 'prependingtoship'
+    let _isPreorderBadge = false
+    try {
+      const maybe = (_it as any) || {}
+      const isWaitlist = !!(maybe.is_waitlist_item || maybe.isWaitlist || maybe.is_waitlist)
+      const norm = _s
+      _isPreorderBadge = showPreorderBadge && (isWaitlist || norm === 'preorder' || norm === 'preordered' || norm === 'prependingtoship' || /pre.*order/.test(norm))
+    } catch (e) {
+      // ignore
+    }
     if (String(revealed[idx]) === 'left' || _isPrePendingToShip) {
       // user must drag left (negative deltaX) to close
       if (deltaX < -40) {
@@ -429,10 +450,15 @@ export default function OrderCard({ order, className = '', compact = false, stat
 
     // Determine whether rightward swipe (open left overlay) is allowed for this item
     let isVerified = false
+    let isPreorderBadge = false
     try {
       const itCheck = items[idx]
       const sCheck = String((itCheck as any)?.status ?? '').toLowerCase().trim().replace(/[-_]/g, '')
       isVerified = sCheck === 'verified'
+      const maybe = (itCheck as any) || {}
+      const isWaitlist = !!(maybe.is_waitlist_item || maybe.isWaitlist || maybe.is_waitlist)
+      const norm = sCheck
+      isPreorderBadge = showPreorderBadge && (isWaitlist || norm === 'preorder' || norm === 'preordered' || norm === 'prependingtoship' || /pre.*order/.test(norm))
     } catch (e) {
       // ignore
     }
@@ -467,7 +493,7 @@ export default function OrderCard({ order, className = '', compact = false, stat
       setTranslates((s) => ({ ...s, [idx]: '-100%' }))
       setRevealed((s) => ({ ...s, [idx]: 'right' }))
     } else if (deltaX > 0 && deltaX > required) {
-      if (isVerified) {
+      if (isVerified && !isPreorderBadge) {
         setTranslates((s) => ({ ...s, [idx]: '70%' }))
         setRevealed((s) => ({ ...s, [idx]: 'left' }))
 
@@ -496,7 +522,7 @@ export default function OrderCard({ order, className = '', compact = false, stat
         setRevealed((s) => ({ ...s, [idx]: false }))
       }
     } else if (deltaX > 60) {
-      if (isVerified) {
+      if (isVerified && !isPreorderBadge) {
         setTranslates((s) => ({ ...s, [idx]: '70%' }))
         setRevealed((s) => ({ ...s, [idx]: 'left' }))
       } else {
@@ -652,6 +678,10 @@ export default function OrderCard({ order, className = '', compact = false, stat
           const total = Number.isFinite(priceNum) ? priceNum * (Number.isFinite(qtyNum) ? qtyNum : 1) : null
           const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2))
           const thumbSrc = (it as any).thumbnail ?? (it as any).imageUrl ?? (it as any).image_url ?? (it as any).image ?? ''
+          const maybe = (it as any) || {}
+          const isWaitlist = !!(maybe.is_waitlist_item || maybe.isWaitlist || maybe.is_waitlist)
+          const normForPre = _normStatus
+          const isPreorder = showPreorderBadge && (isWaitlist || normForPre === 'preorder' || normForPre === 'preordered' || normForPre === 'prependingtoship' || /pre.*order/.test(normForPre))
           
           return (
             <div key={it.item_id ?? idx} className={isCanceled ? 'relative opacity-40' : 'relative'}>
@@ -733,13 +763,30 @@ export default function OrderCard({ order, className = '', compact = false, stat
                       }}
                     >
                       {thumbSrc ? (
-                        <Image src={thumbSrc} alt={String(it.sku_code ?? it.sku ?? '')} width={64} height={64} className="object-cover w-full h-full" />
+                        <Image
+                          src={thumbSrc}
+                          alt={String(it.sku_code ?? it.sku ?? '')}
+                          width={64}
+                          height={64}
+                          className="object-cover w-full h-full"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setFsSrc(thumbSrc)
+                            setFsAlt(String(it.sku_code ?? it.sku ?? ''))
+                            setFsOpen(true)
+                          }}
+                        />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-sm text-gray-400">無圖</div>
                       )}
                     </div>
                     <div className="flex-1 min-w-0 ">
-                      <div className="text-sm font-semibold text-gray-900 ">{it.sku_code ?? it.sku}</div>
+                        <div className="flex items-center gap-2">
+                          <div className="text-sm font-semibold text-gray-900 ">{it.sku_code ?? it.sku}</div>
+                          {isPreorder ? (
+                            <div className="text-xs text-black">(預購)</div>
+                          ) : null}
+                        </div>
                         <div className={`flex flex-col items-start gap-1 ${String(revealed[idx]) === 'right' ? 'pointer-events-auto' : 'pointer-events-none'}`}>
                         <div className="flex items-start gap-2 text-xs">
                           <div className="">{it.variation}</div>
@@ -754,8 +801,44 @@ export default function OrderCard({ order, className = '', compact = false, stat
 
                     {/* Status badge & price column (right-aligned) */}
                     <div className="flex flex-col items-end justify-center gap-1">
-                      <div className="flex-shrink-0">{statusBadge ? statusBadge(it.status) : <OrderStatusBadge status={it.status} />}</div>
-                      <div className="text-sm font-bold text-gray-900 pt-2 pr-2 mt-2">{total != null ? `$${fmt(total)}` : `$${it.price ?? '—'}`}</div>
+                        <div className="flex-shrink-0 flex flex-col items-end gap-1">
+                          {(() => {
+                            const norm = _normStatus
+                            const maybe = (it as any) || {}
+                            const isWaitlist = !!(
+                              maybe.is_waitlist_item ||
+                              maybe.isWaitlist ||
+                              maybe.is_waitlist
+                            )
+                            const isPreorder = showPreorderBadge && (isWaitlist || norm === 'preorder' || norm === 'preordered' || norm === 'prependingtoship' || /pre.*order/.test(norm))
+                            return isPreorder ? (
+                              <button
+                                aria-label="Open restock sidebar"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  try {
+                                    const prod = {
+                                      id: (it as any).sku_id ?? (it as any).variation_id ?? String((it as any).sku_id ?? (it as any).variation_id ?? (it as any).sku ?? (it as any).sku_code ?? idx),
+                                      sku: String((it as any).sku ?? (it as any).sku_code ?? ''),
+                                      name: String((it as any).title ?? (it as any).sku ?? (it as any).sku_code ?? ''),
+                                      images: thumbSrc ? [thumbSrc] : [],
+                                      price: Number((it as any).price ?? 0),
+                                    } as any
+                                    setRestockProduct(prod as Product)
+                                    setRestockSidebarOpen(true)
+                                  } catch (err) {
+                                    // ignore
+                                  }
+                                }}
+                                className="inline-flex items-center justify-center rounded-md border px-2 py-0.5 text-xs bg-primary text-white"
+                              >
+                                +補貨
+                              </button>
+                            ) : null
+                          })()}
+                          <div>{statusBadge ? statusBadge(it.status) : <OrderStatusBadge status={it.status} />}</div>
+                        </div>
+                        <div className="text-sm font-bold text-gray-900 pt-2 pr-2 mt-2">{total != null ? `$${fmt(total)}` : `$${it.price ?? '—'}`}</div>
                     </div>
                   </div>
                 </div>
@@ -766,6 +849,12 @@ export default function OrderCard({ order, className = '', compact = false, stat
         })}
       </div>
       <ImageFullscreen src={fsSrc} alt={fsAlt} open={fsOpen} onClose={() => setFsOpen(false)} />
+
+      <Sheet open={restockSidebarOpen} onOpenChange={(open) => { setRestockSidebarOpen(open); if (!open) setRestockProduct(null); }}>
+        <SheetContent side="left" className="w-full sm:w-[540px] flex flex-col h-full px-4 sm:px-6 bg-white">
+          <RestockSidebar product={restockProduct} />
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }

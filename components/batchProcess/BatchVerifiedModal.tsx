@@ -120,6 +120,9 @@ export default function BatchConfirmModal({
         payment_proof_url: it.payment_proof_url,
         receipt_url: it.receipt_url,
         transaction_id: it.transaction_id,
+        // preserve waitlist/preorder flag from RPC so child components can
+        // display a '預購' badge when appropriate
+        is_waitlist_item: it.is_waitlist_item,
         variation: it.variation_text,
         remarks: it.remark,
         payment_deadline: it.payment_deadline,
@@ -200,22 +203,22 @@ export default function BatchConfirmModal({
         onClick={() => onOpenChange(false)}
       />
 
-      <div className="relative w-[90vw] max-w-[400px] max-h-[80vh] bg-white rounded-3xl shadow-2xl overflow-auto">
-       
+      <div className="relative w-[90vw] max-w-[400px] max-h-[80vh] bg-white rounded-3xl shadow-2xl flex flex-col">
 
-        {/* Header */}
-        <div className="px-6 pt-4 pb-2 flex items-start justify-center mb-4">
-          <div className=" text-sm text-gray-600">核對入數記錄</div>
-          <button
-            aria-label="close"
-            onClick={() => onOpenChange(false)}
-            className="text-gray-500 absolute right-4 top-4"
-          >
-            <Lucide.X />
-          </button>
-        </div>
+        {/* Fixed header area (non-scrollable) */}
+        <div className="flex-shrink-0">
+          <div className="px-6 pt-4 pb-2 flex items-start justify-center mb-4">
+            <div className=" text-xs text-gray-600">核對入數記錄</div>
+            <button
+              aria-label="close"
+              onClick={() => onOpenChange(false)}
+              className="text-gray-500 absolute right-4 top-4"
+            >
+              <Lucide.X />
+            </button>
+          </div>
 
-        <div className="px-6 pb-4 border-b flex-col items-center">
+          <div className="px-6 pb-4 border-b flex-col items-center">
           <div className="flex items-center gap-2 justify-center">
             {bulkData.length > 1 && (
               <button
@@ -228,7 +231,7 @@ export default function BatchConfirmModal({
               </button>
             )}
 
-            <div className="text-xs text-gray-500">
+            <div className="text-[10px] text-gray-500">
               {loading
                 ? "載入中…"
                 : `第 ${bulkData.length > 0 ? currentIndex + 1 : 0}/${bulkData.length} 位顧客`}
@@ -247,20 +250,21 @@ export default function BatchConfirmModal({
           </div>
 
           <div className="mt-2 flex items-center gap-3 justify-center">
-            <div className="text-lg font-semibold">
+            <div className="text-xs font-semibold">
               {bulkData[currentIndex]?.customer_info.customer_name ?? "—"}
             </div>
-            <div className="text-lg font-semibold text-gray-700">|</div>
-            <div className="text-lg font-semibold">{bulkData[currentIndex]?.customer_info.phone ?? "—"}</div>
+            <div className="text-xs font-semibold text-gray-700">|</div>
+            <div className="text-xs font-semibold">{bulkData[currentIndex]?.customer_info.phone ?? "—"}</div>
           </div>
         </div>
+        </div>
 
-        {/* Body */}
-        <div className="p-6 space-y-4 max-h-[100%]">
+        {/* Body (scrollable) */}
+        <div className="p-6 space-y-4 overflow-auto flex-1">
           {/* Summary row */}
           <div className="flex items-center gap-2 text-sm font-bold">
-                  <div className="">交易編號</div>
-                  <div className="">{(function(){
+                  <div className="text-xs">交易編號</div>
+                  <div className="text-xs">{(function(){
                     try {
                       const txs = extractedOrderGroups.flatMap((og:any) => (og.items||[]).map((it:any)=>it.transaction_id).filter(Boolean))
                       return txs.length ? txs[0] : '—'
@@ -271,15 +275,15 @@ export default function BatchConfirmModal({
                 </div>    
           <div className="flex items-center justify-between">
             <div className="flex flex-col gap-2">
-              <div className="text-xs text-gray-700">共 {extractedOrderGroups.length} 張訂單 | {totalQuantity} 件商品</div>
-              <div className="text-md font-semibold">總額 ${totalAmount.toLocaleString()}</div>
+              <div className="text-[10px] text-gray-700">共 {extractedOrderGroups.length} 張訂單 | {totalQuantity} 件商品</div>
+              <div className="text-xs font-semibold">總額 ${totalAmount.toLocaleString()}</div>
             </div>
 
               <div>
                 <div className="text-xs text-gray-500">{/* transaction id placeholder */}</div>
                 <div className="mt-2">
                   <button
-                    className="px-3 py-1.5 rounded bg-primary text-white text-sm"
+                    className="px-3 py-1.5 rounded bg-primary text-white text-xs"
                     onClick={handleConfirmTransaction}
                   >
                     確認交易
@@ -308,6 +312,7 @@ export default function BatchConfirmModal({
 
           
 
+
           {/* expand/collapse button placed below image container */}
           <div className="flex justify-center mt-2">
             <button
@@ -327,7 +332,7 @@ export default function BatchConfirmModal({
           {ordersExpanded ? (
             <div className="space-y-3 mt-3">
               {extractedOrderGroups.length === 0 ? (
-                <div className="text-sm text-gray-500">{loading ? '載入中…' : '沒有選取任何訂單'}</div>
+                <div className="text-xs text-center text-gray-500">{loading ? '載入中…' : '沒有選取任何訂單'}</div>
               ) : (
                 extractedOrderGroups.map((og) => (
                   <OrderCard key={og.order_number} order={og} className="bg-white rounded-xl shadow max-h-96 overflow-hidden" />
@@ -379,4 +384,3 @@ export default function BatchConfirmModal({
     </div>
   )
 }
-

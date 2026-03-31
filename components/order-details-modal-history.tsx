@@ -365,7 +365,7 @@ export default function OrderDetailsModal({ open, onOpenChange, customerId, refe
                        
 
                         <div className="rounded-2xl overflow-hidden  mx-auto max-w-4xl">
-                          <div className="py-4 flex items-center ">
+                          <div className="py-4 flex flex-col gap-4 items-center ">
                             {(page?.orders || []).map((order) => (
                               <OrderCard key={order.order_number} order={order as any} statusBadge={(s) => <OrderStatusBadge status={s as string} />} />
                             ))}

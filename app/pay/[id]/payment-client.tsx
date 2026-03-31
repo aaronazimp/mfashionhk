@@ -125,19 +125,6 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
   const [liveOrder, setLiveOrder] = useState<PaymentPageOrder>(order);
   const router = useRouter();
 
-  // If the incoming order is not confirmed, redirect to order-history with expected params
-  useEffect(() => {
-    const status = (order?.status ?? '') as string;
-    if (status !== 'confirmed') {
-      const params = new URLSearchParams();
-      const tx = order?.transaction_id ?? order?.order_number ?? order?.id ?? '';
-      if (tx) params.set('transaction_id', String(tx));
-      if (order?.whatsapp) params.set('whatsapp', String(order.whatsapp));
-      router.replace(`/order-history?${params.toString()}`);
-    }
-    // Intentionally run once on mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // Subscribe to Supabase Realtime for instant updates
   useEffect(() => {
@@ -181,7 +168,7 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
     }
   }, [liveOrder.payment_deadline, liveOrder.deadline]);
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('payme');
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('fps');
   
 
   // Use pay_now_groups as the canonical source for payable items grouped by original order number
@@ -230,6 +217,19 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
   const handlePaymentProofUploaded = () => {
     goToStep(4);
   };
+
+  const historyQuery = (() => {
+    try {
+      const params = new URLSearchParams();
+      const tx = liveOrder.transaction_id ?? liveOrder.order_number ?? liveOrder.id ?? '';
+      if (tx) params.set('transaction_id', String(tx));
+      if (liveOrder.whatsapp) params.set('whatsapp', String(liveOrder.whatsapp));
+      const q = params.toString();
+      return q ? `?${q}` : '';
+    } catch {
+      return '';
+    }
+  })();
 
   return (
     <ErrorBoundary>
@@ -288,7 +288,7 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
                     <div className="mb-4 w-full">
                       <div className="bg-white rounded-lg p-3">
                         <p className="text-xs text-zinc-600 mb-9 text-center">以下是您訂購的產品，核對無誤後進入下一步付款</p>
-                        <h4 className="text-xs font-medium text-[#6b7280] mb-1 text-center">項目明細</h4>
+                        <h4 className="text-center mb-2 text-[10px]">項目明細</h4>
                         {Object.keys(payNowGroups).length > 0 ? (
                           Object.entries(payNowGroups).map(([origOrderNumber, items]) => (
                             <div key={origOrderNumber} className="mb-3 flex justify-center">
@@ -386,15 +386,12 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
                             <CardContent className="p-4 space-y-3 text-xs text-gray-600">
                                <div className="flex justify-between items-center">
                                 <span>帳戶名稱</span>
-                                <span className="font-bold text-black">M-Fashion Limited</span>
+                                <span className="font-bold text-black">MFashion</span>
                               </div>
+                              
                               <div className="flex justify-between items-center border-b border-emerald-100 pb-2">
-                                <span>轉數快號碼</span>
-                                <span className=" font-bold text-black text-sm selection:bg-emerald-200">1234567</span>
-                              </div>
-                              <div className="flex justify-between items-center border-b border-emerald-100 pb-2">
-                                <span>電話號碼</span>
-                                <span className=" font-bold text-black text-sm selection:bg-emerald-200">+852 9123 4567</span>
+                                <span>轉數快電話號碼</span>
+                                <span className=" font-bold text-black selection:bg-emerald-200">+852 9165 0585</span>
                               </div>
                               
                               <div className="flex justify-between items-center border-b border-emerald-100 pb-2">
@@ -488,8 +485,8 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
                       <Lucide.CheckCircle2 className="h-12 w-12 text-green-500" />
                     </div>
                     <div className="space-y-2">
-                      <h3 className="text-xl font-semibold text-green-900">已提交付款證明</h3>
-                      <p className="text-green-700">我們已收到您的付款證明，感謝您的購買。</p>
+                      <h3 className="text-sm font-semibold text-green-900">已提交付款證明</h3>
+                      <p className="text-xs text-green-700">我們已收到您的付款證明，感謝您的購買。</p>
                       {order.payment_proof_url && (
                         <div className="mt-4">
                           <a href={order.payment_proof_url} target="_blank" rel="noreferrer" className="text-xs text-green-600 underline hover:text-green-800">
@@ -500,9 +497,16 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
                     </div>
                     <Link href="/flash-sale" className="block">
                       <button
-                        className="w-full bg-[#A87C73] hover:bg-[#986B62] text-white font-bold py-3 px-4 rounded-xl shadow-md transition-transform active:scale-95 mt-4"
+                        className="text-xs w-full h-[40px] bg-[#A87C73] hover:bg-[#986B62] text-white font-bold py-3 px-4 rounded-xl shadow-md transition-transform active:scale-95 mt-4"
                       >
                         返回選購商品
+                      </button>
+                    </Link>
+                    <Link href={`/order-history${historyQuery}`} className="block">
+                      <button
+                        className="text-xs w-full h-[40px] mt-3 border border-gray-300 text-gray-700 bg-white rounded-xl shadow-sm font-medium py-3 px-4 transition-transform active:scale-95"
+                      >
+                        查看訂單紀錄
                       </button>
                     </Link>
                   </div>

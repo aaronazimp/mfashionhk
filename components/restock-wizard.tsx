@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { getRestockAllocationData, processBulkRestock } from "@/lib/orderService";
-import type { RestockVariation, RestockSku } from "@/types/order";
+import type { RestockVariation, RestockSku, RestockAllocationData, RestockAllocationResponse, RestockSize, RestockColor } from "@/types/order";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -22,10 +22,11 @@ interface RestockWizardProps {
   onClose: () => void;
   sku?: string;
   // optional initial variations or full SKU payload; otherwise demo data is used
-  initial?: RestockVariation[] | RestockSku;
+  // now expect the canonical RPC-shaped SKU payload
+  initial?: RestockSku | RestockAllocationData | RestockAllocationResponse;
 }
 
-function SkuSummary({ sku, rows, children, preview }: { sku: string; rows: RestockVariation[]; children?: React.ReactNode; preview?: string | null }) {
+function SkuSummary({ sku, rows, children, preview, totalWaitlistOrdersCount }: { sku: string; rows: RestockVariation[]; children?: React.ReactNode; preview?: string | null; totalWaitlistOrdersCount?: number | undefined }) {
   return (
     <div className="flex items-start gap-4">
       <div className="w-28 h-40 bg-gray-100 rounded flex-shrink-0 overflow-hidden flex items-center justify-center">
@@ -39,8 +40,8 @@ function SkuSummary({ sku, rows, children, preview }: { sku: string; rows: Resto
       <div className="flex-1">
         <div className="font-bold text-xs">{sku}</div>
         <div className="text-[10px] text-gray-500 mt-1">共有 {rows.length} 個變體</div>
-        <div className="mt-2 font-bold text-[10px]">候補總數：{rows.reduce((s, v) => s + (v.waitlist ?? 0), 0)} 件</div>
-        {children && <div className="mt-3">{children}</div>}
+        <div className="mt-2 font-bold text-[10px]">候補總數：{totalWaitlistOrdersCount} 件</div>
+       
       </div>
     </div>
   );
@@ -60,33 +61,31 @@ function EmptyWidget({ title, subtitle }: { title?: string; subtitle?: string })
 
 export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", initial }: RestockWizardProps) {
   let initialRows: RestockVariation[] = [];
-  if (Array.isArray(initial)) {
-    initialRows = initial as RestockVariation[];
-    } else if (initial && typeof initial === "object" && (initial as RestockSku).sizes) {
+  if (initial && typeof initial === "object" && (initial as RestockSku).sizes) {
     const skuInit = initial as RestockSku;
     initialRows = skuInit.sizes.flatMap((s) => {
       const sizeName = s.size ?? "";
-      return (s.colors || []).map((c: any) => ({
-        variation_id: Number(c.variation_id ?? c.variationId ?? c.id),
-        id: String(c.variation_id ?? c.variationId ?? c.id),
-        size: sizeName ?? c.size ?? undefined,
-        color: c.color ?? c.color_name ?? undefined,
-        waitlist: Number(c.waitlist_count ?? c.waitlist ?? 0),
-        // new RPC fields
-        ordered_qty: Number(c.ordered_qty ?? c.orderedQty ?? 0),
-        orders_count: Number(c.orders_count ?? c.ordersCount ?? 0),
-        current_stock: Number(c.current_stock ?? c.currentStock ?? 0),
-        reels_quota: (() => {
-          const rq = c.reels_quota ?? c.reelsQuota;
-          return rq !== undefined && rq !== null ? Number(rq) : undefined;
-        })(),
-        current_quota: (() => {
-          const cq = c.current_quota ?? c.currentQuota ?? c.reels_quota ?? c.reelsQuota;
-          return cq !== undefined && cq !== null ? Number(cq) : undefined;
-        })(),
-        currentQty: Number(c.current_stock ?? c.currentStock ?? 0),
-        waitlistOrders: c.waitlist_orders ?? c.waitlistOrders ?? undefined,
-      }));
+      return (s.colors || []).map((c: RestockColor) => ({
+        variation_id: Number(c.variation_id),
+        id: String(c.variation_id),
+        size: sizeName ?? undefined,
+        color: c.color,
+        // RPC-provided waitlist count (if present)
+          waitlist: c.waitlist_count !== undefined ? Number(c.waitlist_count) : undefined,
+          // new RPC fields
+          waitlist_qty: c.waitlist_qty !== undefined ? Number(c.waitlist_qty) : undefined,
+          confirmed_qty: c.confirmed_qty !== undefined ? Number(c.confirmed_qty) : undefined,
+          waitlist_orders_count: c.waitlist_orders_count !== undefined ? Number(c.waitlist_orders_count) : undefined,
+          confirmed_orders_count: c.confirmed_orders_count !== undefined ? Number(c.confirmed_orders_count) : undefined,
+        // canonical RPC fields
+        ordered_qty: c.ordered_qty !== undefined ? Number(c.ordered_qty) : undefined,
+        orders_count: c.orders_count !== undefined ? Number(c.orders_count) : undefined,
+        current_stock: c.current_stock !== undefined ? Number(c.current_stock) : undefined,
+        reels_quota: c.reels_quota,
+        current_quota: c.current_quota ?? c.reels_quota,
+        currentQty: c.current_stock !== undefined ? Number(c.current_stock) : undefined,
+        waitlistOrders: c.waitlist_orders ?? undefined,
+      } as RestockVariation));
     });
   }
 
@@ -146,43 +145,37 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
       try {
         const data = await getRestockAllocationData(skuId);
         let payload: any = data;
-        console.log('get_restock_allocation_data payload', payload);
         if (Array.isArray(data) && data.length > 0 && data[0].get_restock_allocation_data) payload = data[0].get_restock_allocation_data;
-        else if (data.get_restock_allocation_data) payload = data.get_restock_allocation_data;
-        // RPC returns a `sizes` array with nested `colors`.
-        // keep a copy of the raw payload for debug inspection
+        else if (data && data.get_restock_allocation_data) payload = data.get_restock_allocation_data;
+
+        // canonical RPC payload expected: has `sizes` array
         setRpcPayload(payload);
-        // capture main preview image if present
-        const mainPreview = payload?.main_preview_image ?? payload?.mainPreviewImage ?? null;
+        const mainPreview = payload?.main_preview_image ?? null;
         if (mainPreview) setPreviewImage(String(mainPreview));
 
         if (payload?.sizes && Array.isArray(payload.sizes)) {
           const skuPayload = payload as RestockSku;
-          const mapped: RestockVariation[] = skuPayload.sizes.flatMap((s: any) => {
+          const mapped: RestockVariation[] = skuPayload.sizes.flatMap((s: RestockSize) => {
             const sizeName = s.size ?? "";
-              return (s.colors || []).map((c: any) => ({
-              variation_id: Number(c.variation_id ?? c.variationId ?? c.id),
-              id: String(c.variation_id ?? c.variationId ?? c.id),
-              size: sizeName ?? c.size ?? undefined,
-              color: c.color ?? c.color_name ?? undefined,
-              waitlist: Number(c.waitlist_count ?? c.waitlist ?? 0),
-              // new RPC fields
-              ordered_qty: Number(c.ordered_qty ?? c.orderedQty ?? 0),
-              orders_count: Number(c.orders_count ?? c.ordersCount ?? 0),
-              // preserve RPC fields for UI display (ensure numbers)
-              current_stock: Number(c.current_stock ?? c.currentStock ?? 0),
-              reels_quota: (() => {
-                const rq = c.reels_quota ?? c.reelsQuota;
-                return rq !== undefined && rq !== null ? Number(rq) : undefined;
-              })(),
-              current_quota: (() => {
-                const cq = c.current_quota ?? c.currentQuota ?? c.reels_quota ?? c.reelsQuota;
-                return cq !== undefined && cq !== null ? Number(cq) : undefined;
-              })(),
-              // keep legacy alias used across the component
-              currentQty: Number(c.current_stock ?? c.currentStock ?? 0),
-              waitlistOrders: c.waitlist_orders ?? c.waitlistOrders ?? undefined,
-            }));
+            return (s.colors || []).map((c: RestockColor) => ({
+              variation_id: Number(c.variation_id),
+              id: String(c.variation_id),
+              size: sizeName ?? undefined,
+              color: c.color,
+              waitlist: c.waitlist_count !== undefined ? Number(c.waitlist_count) : undefined,
+              // map new RPC fields into the variation shape
+              waitlist_qty: c.waitlist_qty !== undefined ? Number(c.waitlist_qty) : undefined,
+              confirmed_qty: c.confirmed_qty !== undefined ? Number(c.confirmed_qty) : undefined,
+              waitlist_orders_count: c.waitlist_orders_count !== undefined ? Number(c.waitlist_orders_count) : undefined,
+              confirmed_orders_count: c.confirmed_orders_count !== undefined ? Number(c.confirmed_orders_count) : undefined,
+              ordered_qty: c.ordered_qty !== undefined ? Number(c.ordered_qty) : undefined,
+              orders_count: c.orders_count !== undefined ? Number(c.orders_count) : undefined,
+              current_stock: c.current_stock !== undefined ? Number(c.current_stock) : undefined,
+              reels_quota: c.reels_quota,
+              current_quota: c.current_quota ?? c.reels_quota,
+              currentQty: c.current_stock !== undefined ? Number(c.current_stock) : undefined,
+              waitlistOrders: c.waitlist_orders ?? undefined,
+            } as RestockVariation));
           });
 
           if (mapped.length > 0) {
@@ -190,49 +183,9 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
             const qmap: Record<string, number | undefined> = {};
             for (const it of mapped) qmap[it.id] = it.current_quota as number | undefined;
             setQuotaFromRpc(qmap);
-            console.log('restock-wizard mapped rows (sample):', mapped.map((r: any) => ({ id: r.id, current_stock: r.current_stock, current_quota: r.current_quota, currentQty: r.currentQty, waitlistOrdersSample: r.waitlistOrders?.slice(0,3) })));
             setSelectedVariationIndex(0);
             setSelectedCustomers({});
             setAllocationPreview({});
-          }
-        } else {
-          // Fallback for older RPC shapes: variations or top-level array
-          const variations: any[] = payload.variations ?? (Array.isArray(payload) ? payload : []);
-          if (variations.length > 0) {
-            const mapped: RestockVariation[] = variations.map((v: any) => ({
-              variation_id: Number(v.variation_id ?? v.variationId ?? v.id),
-              id: String(v.variation_id ?? v.variationId ?? v.id),
-              size: v.size ?? v.size_name ?? undefined,
-              color: v.color ?? v.color_name ?? undefined,
-              waitlist: Number(v.waitlist_count ?? v.waitlist ?? 0),
-              // new RPC fields
-              ordered_qty: Number(v.ordered_qty ?? v.orderedQty ?? 0),
-              orders_count: Number(v.orders_count ?? v.ordersCount ?? 0),
-              current_stock: Number(v.current_stock ?? v.current_qty ?? 0),
-              reels_quota: (() => {
-                const rq = v.reels_quota ?? v.reelsQuota;
-                return rq !== undefined && rq !== null ? Number(rq) : undefined;
-              })(),
-              current_quota: (() => {
-                const cq = v.current_quota ?? v.currentQuota ?? v.reels_quota ?? v.reelsQuota;
-                return cq !== undefined && cq !== null ? Number(cq) : undefined;
-              })(),
-              currentQty: Number(v.current_qty ?? v.current_stock ?? 0),
-              waitlistOrders: v.waitlist_orders ?? v.waitlistOrders ?? undefined,
-            }));
-            setRows(mapped);
-            const qmap: Record<string, number | undefined> = {};
-            for (const it of mapped) qmap[it.id] = it.current_quota as number | undefined;
-            setQuotaFromRpc(qmap);
-            console.log('restock-wizard mapped rows (fallback) sample:', mapped.map((r: any) => ({ id: r.id, waitlistOrdersSample: r.waitlistOrders?.slice(0,3) })));
-            setSelectedVariationIndex(0);
-            setSelectedCustomers({});
-            setAllocationPreview({});
-            // also try to set preview from fallback payload
-            const mainPreviewFallback = payload?.main_preview_image ?? payload?.mainPreviewImage ?? null;
-            if (mainPreviewFallback) setPreviewImage(String(mainPreviewFallback));
-            // store fallback payload too
-            setRpcPayload(payload);
           }
         }
       } catch (err) {
@@ -520,9 +473,9 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
 
   return (
     <AlertDialog open={isOpen} onOpenChange={(o) => { if (!o) handleClose(); }}>
-      <AlertDialogContent className="relative max-w-[90vw] max-h-[90vh] p-6 rounded-2xl">
+      <AlertDialogContent className="relative max-w-[400px] max-h-[90vh] p-6 rounded-2xl">
         <AlertDialogHeader>
-          <AlertDialogTitle className="text-xs">補貨明細</AlertDialogTitle>
+          <AlertDialogTitle className="text-xs text-center">補貨明細</AlertDialogTitle>
           <div className="flex items-center justify-between mb-4">
             {step > 1 && step !== 4 && (
               <Button size="icon-sm" variant="ghost" className="absolute top-2 left-2 p-0" aria-label="Back" onClick={() => setStep((s) => Math.max(1, s - 1))}>
@@ -553,14 +506,14 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
           </div>
         )}
 
-        <div className="space-y-6">
+        <div className="space-y-4">
           {step === 1 && (
-            <div className="flex flex-col gap-9 max-h-[90vh] overflow-y-auto">
-              <SkuSummary sku={sku} rows={rows} preview={previewImage} />
+            <div className="flex flex-col gap-9 w-[350px] h-[90vh]  mx-auto">
+              <SkuSummary sku={sku} rows={rows} preview={previewImage} totalWaitlistOrdersCount={rpcPayload?.total_waitlist_orders_count} />
               {rows.length === 0 ? (
                 <EmptyWidget title="找不到變體" subtitle="目前沒有可顯示的變體資料。" />
               ) : (
-                <div className="max-w-[400px] mx-5 max-h-[90vh] overflow-y-auto">
+                <div className="">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-[9px] text-gray-500">
@@ -571,7 +524,7 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
                         <th className="text-center">配額</th>
                        
                         <th className="text-center">訂單鎖定</th>
-                        <th className="text-center">可用庫存</th>
+                        
                         <th className="text-center">候補</th>
                          <th className="text-center">番貨數量</th>
                       </tr>
@@ -581,21 +534,21 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
                         <tr key={r.id} className="border-t py-2">
                           <td className="py-3 text-[10px] text-center">{r.size}</td>
                           <td className="py-3 text-[10px] text-center">{r.color}</td>
-                          <td className="py-3 text-[10px] text-center">{r.currentQty}</td>
+                          <td className="py-3 text-[10px] text-center">{r.current_stock}</td>
                           
-                          <td className="py-3 text-[10px] text-center">{r.current_quota}</td>
+                          <td className="py-3 text-[10px] text-center">{r.reels_quota}</td>
+                          <td className="py-3 text-[10px] text-center">{r.confirmed_orders_count}</td>
                          
-                          <td className="py-3 text-[10px] text-center">{r.available_qty}</td>
                           
-                          <td className="py-3 text-[10px] text-center">{r.ordered_qty}</td>
-                          <td className="py-3 text-[10px] text-center">{r.waitlist}</td>
-                           <td className="py-3 text-[10px] text-center">
+                         
+                          <td className="py-3 text-[10px] text-center">{r.waitlist_orders_count}</td>
+                           <td className="py-1 text-center">
                             <Input
                               type="text"
                               inputMode="numeric"
                               pattern="[0-9]*"
-                              className="w-9 h-7 text-center px-0 py-0 text-[10px]"
-                              value={String(restockAmounts[r.id] ?? "")}
+                              className="w-9 h-7 text-[10px] text-center"
+                              value={String(restockAmounts[r.id] ?? 0)}
                               onChange={(e) => {
                                 const v = e.target.value.replace(/[^0-9]/g, "");
                                 updateRestockAmount(r.id, v === "" ? 0 : Number(v));
@@ -616,8 +569,8 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
           )}
 
           {step === 2 && (
-            <div className="max-h-[90vh] overflow-y-auto">
-              <SkuSummary sku={sku} rows={rows} preview={previewImage}>
+            <div className=" w-[400px] h-[90vh] mx-auto">
+              <SkuSummary sku={sku} rows={rows} preview={previewImage} totalWaitlistOrdersCount={rpcPayload?.total_waitlist_orders_count}>
                 {filteredIndices.length > 0 && (
                   <div className="flex h-[24px]">
                     <Button size="sm" variant="outline" className="text-xs h-[29px]" onClick={autoAssignAll}>自動分配所有變體</Button>
@@ -736,8 +689,8 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
           )}
 
           {step === 3 && (
-            <div className="max-h-[90vh] overflow-y-auto">
-              <SkuSummary sku={sku} rows={rows} preview={previewImage} />
+            <div className=" w-[400px] h-[90vh] mx-auto">
+              <SkuSummary sku={sku} rows={rows} preview={previewImage} totalWaitlistOrdersCount={rpcPayload?.total_waitlist_orders_count} />
               <div className="max-h-[90vh] overflow-y-auto">
                 {rows.some((v) => (restockPayloadMap[v.id]?.order_ids?.length ?? 0) > 0 || (allocationPreview[v.id]?.length ?? 0) > 0) && (
                   <>
@@ -816,8 +769,8 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
                             <div className="text-[10px] text-gray-500 w-2/4 flex justify-between">
                               <div className="w-1/4 text-right">{v.current_quota}</div>
                               <div className="w-1/4 text-right">{v.currentQty}</div>
-                              <div className="w-1/4 text-right">{restockAmounts[v.id] ?? 0}</div>
-                              <div className="w-1/4 text-right">{Number(v.currentQty ?? 0) + Number(v.current_quota ?? 0)}</div>
+                              <div className="w-1/4 text-right">{restockAmounts[v.id]}</div>
+                              <div className="w-1/4 text-right">{Number(v.currentQty) + Number(v.current_quota ?? 0)}</div>
                             </div>
                           </div>
                         ))}
@@ -838,14 +791,14 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
           )}
 
           {step === 4 && (
-            <div className="text-center py-8 max-h-[90vh] overflow-y-auto">
+            <div className="text-center py-8  w-[400px] h-[90vh] mx-auto">
               <div className="mx-auto w-14 h-14 rounded-full bg-[#F1F5F9] flex items-center justify-center mb-6">
                 <svg className="w-9 h-9 text-[#C4A59D]" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
               </div>
               <div className="text-md font-bold mb-2">完成補貨</div>
               <div className="text-[10px] text-gray-500 mb-9">分配訂單後，剩下的補貨已加入庫存</div>
 
-                    { /* debug logging moved to useEffect */ }
+                    
                   <div className="inline-block text-left w-56">
                     {rows.length === 0 ? (
                       <EmptyWidget title="無補貨變體" subtitle="沒有變體資料可顯示。" />

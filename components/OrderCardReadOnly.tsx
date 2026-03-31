@@ -76,6 +76,7 @@ export default function OrderCard({ order, className = '', compact = false, stat
           const _normStatus = String(it.status ?? '').toLowerCase().trim().replace(/[-_]/g, '')
           const isPrePendingToShip = _normStatus === 'prependingtoship'
           const isShipped = _normStatus === 'shipped'
+          const isWaitlist = /waitlist|wait(ed)?/.test(_normStatus)
 
           const priceNum = Number((it as any).price ?? NaN)
           const qtyNum = Number((it as any).quantity ?? 1)
@@ -120,7 +121,7 @@ export default function OrderCard({ order, className = '', compact = false, stat
 
                     {/* Status badge & price column (right-aligned) */}
                     <div className="flex flex-col items-end justify-center gap-1">
-                      <div className="flex-shrink-0">{statusBadge ? statusBadge(it.status) : <OrderStatusBadge status={it.status} />}</div>
+                      <div className="flex-shrink-0">{statusBadge ? statusBadge(it.status) : (isWaitlist ? null : <OrderStatusBadge status={it.status} />)}</div>
                       <div className="text-sm font-bold text-gray-900 pt-2 pr-2 mt-2">{total != null ? `$${fmt(total)}` : `$${it.price ?? '—'}`}</div>
                     </div>
                   </div>

@@ -22,7 +22,7 @@ type Props = {
   p_priority_status?: string | null
 }
 
-export default function OrderDetailsModal({ open, onOpenChange, customerId, p_priority_status = 'waitlist' }: Props) {
+export default function OrderDetailsModal({ open, onOpenChange, customerId, p_priority_status }: Props) {
   const [loading, setLoading] = useState(false)
   const [payload, setPayload] = useState<ActiveCustomerRecords | RpcResponse | null>(null)
 
@@ -265,7 +265,8 @@ export default function OrderDetailsModal({ open, onOpenChange, customerId, p_pr
     return parts.length > 0 ? parts.join('  ') : null
   })()
 
-  const waitlistOrders = derivedOrders.filter((o) => isWaitlist(o.order_status))
+  // Show all derived orders (remove client-side waitlist-only filter)
+  const allOrders = derivedOrders
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -297,7 +298,7 @@ export default function OrderDetailsModal({ open, onOpenChange, customerId, p_pr
             <div className="text-center py-8 text-gray-400">沒有相關訂單</div>
           ) : (
             <div className="space-y-3">
-              {waitlistOrders.map((o) => (
+              {allOrders.map((o) => (
                   <OrderCard key={o.order_number} order={o as any} statusBadge={(s) => <OrderStatusBadge status={s as string} />} />
                 ))}
             </div>

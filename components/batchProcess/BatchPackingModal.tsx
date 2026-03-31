@@ -239,6 +239,8 @@ export default function BatchConfirmModal({
         imageUrl: it.main_image ?? it.thumbnail ?? it.imageUrl ?? null,
         receipt_url: it.receipt_url ?? it.payment_proof_url ?? null,
         transaction_id: it.transaction_id ?? it.tx ?? it.transaction ?? null,
+        // preserve waitlist/preorder flag so child components can show badge
+        is_waitlist_item: it.is_waitlist_item ?? it.is_waitlist ?? it.isWaitlist ?? false,
         variation: it.variation_text ?? it.variation_snapshot ?? it.variation ?? undefined,
         remarks: it.remark ?? it.remarks ?? null,
         payment_deadline: it.payment_deadline ?? it.deadline ?? null,
@@ -558,7 +560,7 @@ export default function BatchConfirmModal({
 
         {/* Header */}
         <div className="px-6 pt-4 pb-2 flex items-start justify-center mb-4">
-          <div className=" text-sm text-gray-600">打包執貨</div>
+          <div className=" text-xs text-gray-600">打包執貨</div>
           <button
             aria-label="close"
             onClick={() => onOpenChange(false)}
@@ -614,11 +616,11 @@ export default function BatchConfirmModal({
           </div>
 
           <div className="mt-2 flex items-center gap-3 justify-center">
-            <div className="text-lg font-semibold">
+            <div className="text-xs font-semibold">
               {bulkData[currentIndex]?.customer_info.customer_name ?? "—"}
             </div>
-            <div className="text-lg font-semibold text-gray-700">|</div>
-            <div className="text-lg font-semibold">{bulkData[currentIndex]?.customer_info.phone ?? "—"}</div>
+            <div className="text-xs font-semibold text-gray-700">|</div>
+            <div className="text-xs font-semibold">{bulkData[currentIndex]?.customer_info.phone ?? "—"}</div>
           </div>
         </div>
 
@@ -627,8 +629,8 @@ export default function BatchConfirmModal({
           
           {/* Summary row */}
           <div className="flex items-center gap-2 text-sm font-bold">
-                  <div className="">交易編號</div>
-                  <div className="">{(function(){
+                  <div className="text-xs">交易編號</div>
+                  <div className="text-xs">{(function(){
                     try {
                       const txs = extractedOrderGroups.flatMap((og:any) => (og.items||[]).map((it:any)=>it.transaction_id).filter(Boolean))
                       return txs.length ? txs[0] : '—'
@@ -640,7 +642,7 @@ export default function BatchConfirmModal({
           <div className="flex items-center justify-between">
             <div className="flex flex-col gap-2">
               <div className="text-xs text-gray-700">共 {extractedOrderGroups.length} 張訂單 | {totalQuantity} 件商品</div>
-              <div className="text-md font-semibold">總額 ${totalAmount.toLocaleString()}</div>
+              <div className="text-xs font-semibold">總額 ${totalAmount.toLocaleString()}</div>
             </div>
 
               <div className="mt-2 flex items-center gap-2">

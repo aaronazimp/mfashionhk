@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import RestockSidebar from '@/components/restock-sidebar'
 import { supabase } from '@/lib/supabase'
+import { getRestockDashboard } from '@/lib/orderService'
 import * as Lucide from 'lucide-react'
 import { HeaderTabMenu } from '@/components/header-tab-menu'
 import PaginationControls from '@/components/ui/pagination-controls'
@@ -32,40 +33,19 @@ export default function RestockPage() {
     { key: 'all', label: '顯示全部' },
   ];
 
-  // Load/reload restock dashboard RPC
+  // Load/reload restock dashboard (delegates to orderService)
   const loadRestock = async () => {
     if (mountedRef.current) setLoading(true);
     try {
-      const { data, error } = await supabase.rpc('get_restock_dashboard', {
-        p_search_term: query || '',
-        p_filter_type: filterType,
-        p_page: page,
-        p_per_page: perPage,
-      });
-      if (error) throw error;
-      // Support both legacy array responses and the new { data: [], metadata: {} } shape
-      const rows: any[] = Array.isArray(data) ? data : (data?.data ?? []);
-      const metadata = data && !Array.isArray(data) ? data.metadata ?? null : null;
-
-      const mapped: Product[] = rows.map((row: any) => ({
-        id: String(row.sku_id),
-        sku: row.sku_code,
-        name: row.sku_code || '',
-        price: 0,
-        description: '',
-        images: [row.main_image || '/placeholder.svg'],
-        colors: [],
-        sizes: [],
-        category: '',
-      }));
-
-      const counts: Record<string, number> = {};
-      rows.forEach((row: any) => {
-        counts[String(row.sku_id)] = row.total_sku_waitlist_count ?? 0;
-      });
+      const { products, counts, metadata } = await getRestockDashboard(
+        query || '',
+        filterType,
+        page,
+        perPage
+      );
 
       if (mountedRef.current) {
-        setSkus(mapped);
+        setSkus(products);
         setRestockCounts(counts);
         setRestockMetadata(metadata);
       }
