@@ -16,8 +16,10 @@ import BatchPackingModal from '@/components/batchProcess/BatchPackingModal';
 import BatchPaymentReminderModal from '@/components/batchProcess/BatchPaymentReminderModal';
 import BatchVerifiedModal from '@/components/batchProcess/BatchVerifiedModal';
 import BatchShippingModal from '@/components/batchProcess/BatchShippingModal';
+import BatchRestockReminderModal from '@/components/batchProcess/BatchRestockReminderModal';
 import EmptyWidget from '@/components/EmptyWidget';
 import { List, ListItem } from '@/components/ui/list';
+import DebugPanel from '@/components/debug/DebugPanel';
 
 export default function OrdersPage() {
   const { loading: countLoading, meta: countMeta, statusCounts } = useFetchOrders('all', 1, 1, false);
@@ -240,6 +242,22 @@ export default function OrdersPage() {
         onConfirm={(selected) => { console.log('sent reminders for', selected); setBatchModalSelectedOrderKeys([]); setBatchModalCustomerIds([]); setBatchModalOpenTop(false); }}
       />
 
+      <BatchRestockReminderModal
+        open={batchModalOpenTop && (batchModalStatusFilter === 'stock_arrived_contact' || batchModalStatusFilter === 'waitlist')}
+        onOpenChange={(v) => {
+          setBatchModalOpenTop(v)
+          if (!v) {
+            setBatchModalSelectedOrderKeys([])
+            setBatchModalCustomerIds([])
+            setBatchModalStatusFilter('all')
+          }
+        }}
+        selectedOrderKeys={batchModalSelectedOrderKeys}
+        customerIds={batchModalCustomerIds}
+        statusFilter={batchModalStatusFilter}
+        onConfirm={(selected) => { console.log('sent restock notices for', selected); setBatchModalSelectedOrderKeys([]); setBatchModalCustomerIds([]); setBatchModalOpenTop(false); }}
+      />
+
       <BatchVerifiedModal
         open={batchModalOpenTop && batchModalStatusFilter === 'paid'}
         onOpenChange={(v) => {
@@ -271,12 +289,13 @@ export default function OrdersPage() {
         statusFilter={batchModalStatusFilter}
         onConfirm={(selected) => { console.log('shipped batch for', selected); setBatchModalSelectedOrderKeys([]); setBatchModalCustomerIds([]); setBatchModalOpenTop(false); }}
       />
+      <DebugPanel />
     </div>
   );
 }
 
 function Chips({ statusCounts, onOpenCustomer, onOpenBatch }: { statusCounts?: Record<string, number> | null; onOpenCustomer: (id: string, status?: string) => void; onOpenBatch?: (keys: string[], custIds: string[], status: string | 'all') => void }) {
-  const [selected, setSelected] = useState<string | 'all'>('confirmed');
+  const [selected, setSelected] = useState<string | 'all'>('paid');
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<any[] | null>(null);
   const [page, setPage] = useState<number>(1);
@@ -284,7 +303,7 @@ function Chips({ statusCounts, onOpenCustomer, onOpenBatch }: { statusCounts?: R
 
   const chips = [
     // 'waitlist' chip hidden per request
-    { key: 'allocated', label: '待通知', count: statusCounts?.allocated },
+    { key: 'stock_arrived_contact', label: '到貨通知', count: statusCounts?.stock_arrived_contact },
     { key: 'confirmed', label: '待付款', count: statusCounts?.confirmed },
     { key: 'paid', label: '待核數', count: statusCounts?.paid },
     { key: 'verified', label: '待執貨', count: statusCounts?.verified },
@@ -518,7 +537,9 @@ function CustomerList({ statusFilter, page, perPage, onPageChange, onOpenCustome
           return copy;
         });
       }
-      if (onOpenBatch) onOpenBatch(Object.keys(selectedOrders).filter((k) => !!selectedOrders[k]).length ? Object.keys(selectedOrders).filter((k) => !!selectedOrders[k]) : keys, [cust.customer_id], statusFilter)
+      // Always open the packing modal for this customer's orders.
+      // Use `keys` (this customer's orders) to avoid relying on async state update.
+      if (onOpenBatch) onOpenBatch(keys, [cust.customer_id], 'verified')
       return;
     }
     // If status is 'pending_to_ship' (完成寄貨), open the shipping modal for this customer
@@ -592,12 +613,30 @@ function CustomerList({ statusFilter, page, perPage, onPageChange, onOpenCustome
       }
       return
     }
+
+    // Open batch restock/arrival notification modal for 到貨通知 or waitlist
+    if (statusFilter === 'stock_arrived_contact' || statusFilter === 'waitlist') {
+      const keys: string[] = (cust.orders || []).map((o: any, idx: number) => o.order_number || `${cust.customer_id}_${idx}`);
+      const selected = keys.filter((k) => !!selectedOrders[k]);
+      if (selected.length === 0) {
+        setSelectedOrders((s) => {
+          const copy = { ...s };
+          keys.forEach((k) => { copy[k] = true; });
+          return copy;
+        });
+      }
+      if (onOpenBatch) onOpenBatch(Object.keys(selectedOrders).filter((k) => !!selectedOrders[k]).length ? Object.keys(selectedOrders).filter((k) => !!selectedOrders[k]) : keys, [cust.customer_id], statusFilter)
+      return;
+    }
+
     console.log('customer action for', cust.customer_id, 'selected orders:', selected);
   };
 
   const actionLabel = (() => {
     const map: Record<string, string | null> = {
-      waitlist: null,
+      stock_arrived_contact: '發送到貨通知',
+      // legacy key kept for compatibility
+      waitlist: '發送到貨通知',
       allocated: '發送付款通知',
       confirmed: '發送付款提醒',
       paid: '核對數紙',
@@ -611,11 +650,23 @@ function CustomerList({ statusFilter, page, perPage, onPageChange, onOpenCustome
 
   const handleBulkAction = () => {
     const selected = Object.keys(selectedOrders).filter((k) => !!selectedOrders[k]);
-    if (statusFilter === 'allocated' || statusFilter === 'confirmed' || statusFilter === 'paid' || statusFilter === 'verified' || statusFilter === 'pending_to_ship') {
+    // Explicitly handle the packing case so the packing modal opens reliably.
+    if (statusFilter === 'verified') {
+      if (onOpenBatch) onOpenBatch(selected.length ? selected : selected, customerIdsForModal, 'verified')
+      return;
+    }
+
+    if (statusFilter === 'allocated' || statusFilter === 'confirmed' || statusFilter === 'paid' || statusFilter === 'pending_to_ship') {
       // open batch modal for allocated (confirm), confirmed (payment reminder), or paid (verify)
       if (onOpenBatch) onOpenBatch(selected.length ? selected : selected, customerIdsForModal, statusFilter)
       return;
     }
+
+      // open restock/arrival notification modal for stock_arrived_contact or legacy waitlist
+      if (statusFilter === 'stock_arrived_contact' || statusFilter === 'waitlist') {
+        if (onOpenBatch) onOpenBatch(selected.length ? selected : selected, customerIdsForModal, statusFilter)
+        return;
+      }
     console.log('bulk action', actionLabel, selected);
   };
 
@@ -714,7 +765,8 @@ function CustomerList({ statusFilter, page, perPage, onPageChange, onOpenCustome
                 const now = Date.now();
                 const hoursRemaining = (earliestTs - now) / (1000 * 60 * 60);
                 if (hoursRemaining > 0) {
-                  if (hoursRemaining <= 4) deadlineLabel = '<4 小時';
+                  if (hoursRemaining < 0.25) deadlineLabel = '<15 分鐘';
+                  else if (hoursRemaining <= 4) deadlineLabel = '<4 小時';
                   else if (hoursRemaining <= 12) deadlineLabel = '<12 小時';
                   else deadlineLabel = '>12 小時';
                 }
@@ -738,7 +790,7 @@ function CustomerList({ statusFilter, page, perPage, onPageChange, onOpenCustome
                 </div>
                 {statusFilter === 'confirmed' && (
                   deadlineLabel && (
-                    <div className={`text-xs mt-2 rounded-full text-center p-1 ${deadlineLabel === '<4 小時' ? 'bg-red-600 text-white' : 'bg-primary text-white'}`}>{`付款限期: ${deadlineLabel}`}</div>
+                    <div className={`text-[10px] mt-2 rounded-full text-center p-1 ${(deadlineLabel === '<4 小時' || deadlineLabel === '<15 分鐘') ? 'bg-red-600 text-white' : 'bg-primary text-white'}`}>{`付款限期: ${deadlineLabel}`}</div>
                   )
                 )}
               </div>
@@ -820,12 +872,17 @@ function CustomerList({ statusFilter, page, perPage, onPageChange, onOpenCustome
                     <div key={idx} onClick={(e) => { e.stopPropagation(); if (cust.customer_id) onOpenCustomer(cust.customer_id); }} className={`flex items-center justify-between px-4 py-3 rounded-full ${bg} cursor-pointer hover:bg-gray-50`}>
                       <div className="flex flex-col">
                         <div className="text-[9px] text-gray-500 mb-1">交易號碼</div>
-                        <div className="pl-2 text-sm text-black font-semibold">{o.order_number}</div>
-                        {o.is_customer_created ? (
-                          <div className="pl-2 mt-1 text-[10px] text-black bg-gray-200 inline-block px-2 py-0.5 rounded-full">顧客建立訂單</div>
-                        ) : null}
+                        <div className="flex justify-between items-center gap-2">  
+                          <div className="pl-2 text-xs text-black font-semibold">{o.transaction_id}</div>
+                         
+                        </div>
                       </div>
-                      <div className="text-xs">{label}</div>
+                     <div className="flex gap-2">
+                      {o.is_customer_created ? (
+                            <div className="pl-2 text-[10px] text-black bg-gray-200 inline-block px-2 py-0.5 rounded-full">顧客建立訂單</div>
+                          ) : null}
+                      <div className="text-[10px]">{label}</div>
+                      </div>
                     </div>
                   );
                 })

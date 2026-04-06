@@ -115,31 +115,51 @@ export default function BatchConfirmModal({
   function handleItemStatusChange(itemId: string, newStatus: string, meta?: { source?: string }) {
     try {
       // record whether this status change originated from a swipe gesture
-      _lastChangeBySwipeRef.current = meta?.source === 'swipe'
-      setBulkData((prev) => {
-        const next = prev.map((b, idx) => {
-          if (idx !== currentIndex) return b
+        _lastChangeBySwipeRef.current = meta?.source === 'swipe'
+        setBulkData((prev) => {
           try {
-            const byStatus = b.orders_by_status || {}
-            const nextByStatus: Record<string, any> = {}
-            Object.entries(byStatus).forEach(([k, v]: any) => {
-              const orders = (v?.orders || []).map((og: any) => ({
-                ...og,
-                items: (og.items || []).map((it: any) => {
-                  const itId = String(it.line_item_id ?? it.item_id ?? it.id ?? '')
-                  if (itId === String(itemId)) return { ...it, status: newStatus }
-                  return it
-                }),
-              }))
-              nextByStatus[k] = { ...(v || {}), orders }
+            // Try to update new `transactions` structure first
+            const next = prev.map((b, idx) => {
+              if (idx !== currentIndex) return b
+              try {
+                if (Array.isArray(b.transactions)) {
+                  const nextTx = b.transactions.map((t: any) => ({
+                    ...t,
+                    orders: (t.orders || []).map((o: any) => ({
+                      ...o,
+                      items: (o.items || []).map((it: any) => {
+                        const idsToCheck = [it.line_item_id, it.item_id, it.id].map((v: any) => (v == null ? '' : String(v)))
+                        if (idsToCheck.includes(String(itemId))) return { ...it, status: newStatus }
+                        return it
+                      }),
+                    })),
+                  }))
+                  return { ...b, transactions: nextTx }
+                }
+                // Fallback to old orders_by_status shape
+                const byStatus = b.orders_by_status || {}
+                const nextByStatus: Record<string, any> = {}
+                Object.entries(byStatus).forEach(([k, v]: any) => {
+                  const orders = (v?.orders || []).map((og: any) => ({
+                    ...og,
+                    items: (og.items || []).map((it: any) => {
+                      const itId = String(it.line_item_id ?? it.item_id ?? it.id ?? '')
+                      if (itId === String(itemId)) return { ...it, status: newStatus }
+                      return it
+                    }),
+                  }))
+                  nextByStatus[k] = { ...(v || {}), orders }
+                })
+                return { ...b, orders_by_status: nextByStatus }
+              } catch (e) {
+                return b
+              }
             })
-            return { ...b, orders_by_status: nextByStatus }
+            return next
           } catch (e) {
-            return b
+            return prev
           }
         })
-        return next
-      })
 
       
     } catch (e) {
@@ -155,8 +175,38 @@ export default function BatchConfirmModal({
     // Show orders for the selected customer only. Use initial snapshot (if present)
     const displayed = initialBulkDataRef.current ?? bulkData
     const b = displayed[currentIndex]
-    const groups = b ? Object.values(b.orders_by_status).flatMap((s: any) => (Array.isArray(s) ? s : s?.orders ?? [])) : []
+    if (!b) return []
 
+    // If the new `transactions` shape is present, flatten orders from transactions
+    if (Array.isArray(b.transactions) && b.transactions.length > 0) {
+      return b.transactions.flatMap((tx: any) => {
+        const orders = tx.orders || []
+        return orders.map((og: any) => ({
+          order_number: og.order_number,
+          order_total: og.order_total ?? og.order_total_amount ?? og.transaction_total ?? tx.transaction_total ?? 0,
+          payment_proof_url: og.payment_proof_url ?? tx.payment_proof_url ?? null,
+          items: (og.items || []).map((it: any) => ({
+            item_id: it.line_item_id ?? it.item_id ?? `${og.order_number}_${Math.random().toString(36).slice(2,6)}`,
+            price: it.price ?? it.unit_price ?? 0,
+            status: it.status,
+            quantity: it.quantity ?? it.qty ?? 0,
+            sku_code: it.sku_code ?? it.sku_code_snapshot ?? it.sku ?? undefined,
+            sku: it.sku ?? it.sku_code ?? undefined,
+            thumbnail: it.main_image ?? it.thumbnail ?? it.imageUrl ?? null,
+            imageUrl: it.main_image ?? it.thumbnail ?? it.imageUrl ?? null,
+            receipt_url: it.receipt_url ?? it.payment_proof_url ?? null,
+            transaction_id: it.transaction_id ?? og.transaction_id ?? tx.transaction_id ?? null,
+            is_waitlist_item: it.is_waitlist_item ?? it.is_waitlist ?? it.isWaitlist ?? false,
+            variation: it.variation_text ?? it.variation_snapshot ?? it.variation ?? undefined,
+            remarks: it.remark ?? it.remarks ?? null,
+            payment_deadline: it.payment_deadline ?? it.deadline ?? null,
+          })),
+        }))
+      })
+    }
+
+    // Fallback to old orders_by_status shape
+    const groups = Object.values(b?.orders_by_status ?? {}).flatMap((s: any) => (Array.isArray(s) ? s : s?.orders ?? []))
     return groups.map((og: any) => ({
       order_number: og.order_number,
       order_total: og.order_total ?? og.order_total_amount ?? 0,
@@ -180,6 +230,55 @@ export default function BatchConfirmModal({
     }))
   }, [bulkData, currentIndex])
 
+  // Build a per-transaction view if the new shape exists
+  const extractedTransactions = useMemo(() => {
+    const displayed = initialBulkDataRef.current ?? bulkData
+    const b = displayed[currentIndex]
+    if (!b) return []
+    if (!Array.isArray(b.transactions) || b.transactions.length === 0) return []
+
+    return b.transactions.map((tx: any) => {
+      const orders = (tx.orders || []).map((o: any) => ({
+        order_number: o.order_number,
+        order_total: o.order_total ?? o.order_total_amount ?? o.transaction_total ?? tx.transaction_total ?? 0,
+        payment_proof_url: o.payment_proof_url ?? tx.payment_proof_url ?? null,
+        transaction_id: o.transaction_id ?? tx.transaction_id ?? tx.transaction_group_id ?? null,
+        status: o.order_status ?? null,
+        items: (o.items || []).map((it: any) => ({
+          item_id: it.line_item_id ?? it.item_id ?? String(it.id ?? ''),
+          price: it.price ?? it.unit_price ?? 0,
+          status: it.status ?? null,
+          quantity: it.quantity ?? it.qty ?? 0,
+          sku_code: it.sku_code ?? it.sku_code_snapshot ?? undefined,
+          sku: it.sku ?? it.sku_code ?? undefined,
+          thumbnail: it.main_image ?? it.thumbnail ?? it.imageUrl ?? null,
+          imageUrl: it.main_image ?? it.imageUrl ?? it.thumbnail ?? null,
+          payment_proof_url: it.payment_proof_url ?? o.payment_proof_url ?? tx.payment_proof_url ?? null,
+          receipt_url: it.receipt_url ?? null,
+          transaction_id: it.transaction_id ?? o.transaction_id ?? tx.transaction_id ?? null,
+          is_waitlist_item: it.is_waitlist_item ?? it.is_waitlist ?? false,
+          variation: it.variation_text ?? it.variation_snapshot ?? it.variation ?? undefined,
+          remarks: it.remark ?? it.remarks ?? null,
+          payment_deadline: it.payment_deadline ?? it.deadline ?? null,
+        })),
+      }))
+
+      const transaction_total = orders.reduce((s: number, o: any) => s + (Number(o.order_total) || 0), 0)
+      const total_items = orders.reduce((s: number, o: any) => s + ((o.items || []).reduce((si: number, it: any) => si + (Number(it.quantity) || 0), 0)), 0)
+      const payment_proof_url = tx.payment_proof_url ?? (orders[0]?.payment_proof_url) ?? null
+      const transaction_id = tx.transaction_id ?? tx.transaction_group_id ?? (orders[0]?.transaction_id) ?? null
+
+      return {
+        transaction_id,
+        payment_proof_url,
+        orders,
+        transaction_total,
+        total_items,
+        raw: tx,
+      }
+    })
+  }, [bulkData, currentIndex])
+
   const totalAmount = useMemo(() => {
     return extractedOrderGroups.reduce((sum: number, og: any) => {
       const v = Number(og.order_total ?? og.order_total_amount ?? 0) || 0
@@ -201,8 +300,20 @@ export default function BatchConfirmModal({
     try {
       const b = displayedBulkData[currentIndex]
       if (!b) return false
+      // Check new transactions shape first
+      if (Array.isArray(b.transactions) && b.transactions.length > 0) {
+        for (const tx of b.transactions) {
+          for (const o of tx.orders || []) {
+            for (const it of o.items || []) {
+              const s = String(it.status ?? '').toLowerCase().trim().replace(/[-_]/g, '')
+              if (s === 'shipped') return true
+            }
+          }
+        }
+      }
+      // Fallback to old orders_by_status
       const orders = Object.values(b.orders_by_status || {}).flatMap((s: any) => (Array.isArray(s) ? s : s?.orders ?? []))
-        for (const og of orders) {
+      for (const og of orders) {
         for (const it of og.items || []) {
           const s = String(it.status ?? '').toLowerCase().trim().replace(/[-_]/g, '')
           if (s === 'shipped') return true
@@ -415,23 +526,72 @@ export default function BatchConfirmModal({
 
   // (removed handleRevert — server-side revert RPC is no longer used here)
 
-  // Mark current customer's transactions as shipped using new RPC
-  async function handleCompleteShipment() {
-    setLoading(true)
+  // Helper to gather transaction ids for the current displayed customer (handles both
+  // `transactions` shape and legacy `orders_by_status` shape).
+  function getCurrentTransactionIds(): string[] {
     try {
-      const txs: string[] = []
       const b = displayedBulkData[currentIndex] ?? bulkData[currentIndex]
-      if (!b) return
-      const orders = Object.values(b.orders_by_status || {}).flatMap((s: any) => (Array.isArray(s) ? s : s?.orders ?? []))
-      for (const og of orders) {
-        for (const it of og.items || []) {
-          const t = it.transaction_id ?? it.tx ?? it.transaction
-          if (t) txs.push(String(t))
+      if (!b) return []
+      const txs: string[] = []
+
+      // transactions shape: collect from tx, order, and item levels
+      if (Array.isArray(b.transactions) && b.transactions.length > 0) {
+        for (const tx of b.transactions) {
+          const txId = (tx as any).transaction_id ?? (tx as any).transaction_group_id ?? null
+          if (txId) txs.push(String(txId))
+
+          for (const o of tx.orders || []) {
+            const orderTx = (o as any).transaction_id ?? (o as any).tx ?? (o as any).transaction ?? null
+            if (orderTx) txs.push(String(orderTx))
+
+            for (const it of o.items || []) {
+              const itTx = (it as any).transaction_id ?? (it as any).tx ?? (it as any).transaction ?? null
+              if (itTx) txs.push(String(itTx))
+            }
+          }
+        }
+      } else {
+        // legacy orders_by_status shape: collect from order group and items
+        const orders = Object.values(b.orders_by_status || {}).flatMap((s: any) => (Array.isArray(s) ? s : s?.orders ?? []))
+        for (const og of orders) {
+          const orderLevelTx = (og as any).transaction_id ?? (og as any).tx ?? (og as any).transaction ?? null
+          if (orderLevelTx) txs.push(String(orderLevelTx))
+          for (const it of og.items || []) {
+            const itTx = (it as any).transaction_id ?? (it as any).tx ?? (it as any).transaction ?? null
+            if (itTx) txs.push(String(itTx))
+          }
         }
       }
 
-      if (txs.length === 0) {
+      // dedupe and filter falsy values
+      return Array.from(new Set(txs.filter((x) => x != null && String(x).trim() !== '')))
+    } catch (e) {
+      return []
+    }
+  }
+
+  // Mark current customer's transactions as shipped using new RPC. Accepts an
+  // optional array of transaction id strings; if not provided, the function will
+  // extract them from the current displayed data.
+  async function handleCompleteShipment(providedTxs?: string[]) {
+    setLoading(true)
+    // Prevent any lingering auto-advance that was scheduled from a prior swipe
+    try {
+      if (pendingAdvance) {
+        window.clearTimeout(Number(pendingAdvance.timerId))
+        setPendingAdvance(null)
+      }
+    } catch (e) {
+      // ignore
+    }
+    // Clear swipe-origin flag so the auto-advance effect won't treat this
+    // manual complete as a swipe-triggered change.
+    try { _lastChangeBySwipeRef.current = false } catch (e) { /* ignore */ }
+    try {
+      const txs = (providedTxs && providedTxs.length > 0) ? providedTxs : getCurrentTransactionIds()
+      if (!txs || txs.length === 0) {
         setToastMessage('此顧客沒有可標記的交易編號')
+        setLoading(false)
         return
       }
 
@@ -450,6 +610,9 @@ export default function BatchConfirmModal({
         if (ids.length) {
           refreshed = await fetchBulkCustomerOrders(ids, statusFilter)
           setBulkData(refreshed)
+          // keep the UI snapshot in sync with refreshed data so displayedBulkData
+          // reflects the latest server state after a mutation
+          try { initialBulkDataRef.current = refreshed } catch (e) { /* ignore */ }
         }
       } catch (e) {
         console.warn('Failed to refresh after marking shipped', e)
@@ -485,68 +648,39 @@ export default function BatchConfirmModal({
         // ignore snapshot update errors
       }
 
-      // compute per-customer totals from refreshed data (or existing bulkData)
+      // Refreshed list approach: determine position of current customer in
+      // the refreshed list and advance similarly to BatchPackingModal.
       try {
-        const dataForTotals = refreshed ?? bulkData
-        const len = dataForTotals.length
-        const customerTotals = dataForTotals.map((b) => {
-          try {
-            const totals = (b ? Object.values(b.orders_by_status || {}).flatMap((s: any) => (Array.isArray(s) ? s : s?.orders ?? [])) : []).reduce(
-              (acc: { pre: number; total: number }, og: any) => {
-                const items = og.items || []
-                const itTotals = items.reduce(
-                  (a: { pre: number; total: number }, it: any) => {
-                    const qty = Number(it.quantity) || 0
-                    a.total += qty
-                    if (String(it.status) === 'pre_pending_to_ship') a.pre += qty
-                    return a
-                  },
-                  { pre: 0, total: 0 }
-                )
-                acc.pre += itTotals.pre
-                acc.total += itTotals.total
-                return acc
-              },
-              { pre: 0, total: 0 }
-            )
-            return totals
-          } catch (e) {
-            return { pre: 0, total: 0 }
-          }
-        })
+        const refreshedList = Array.isArray(refreshed) ? refreshed : (Array.isArray(bulkData) ? bulkData : [])
+        const newLen = refreshedList.length
 
-        const allDone = customerTotals.every((t) => t.total === 0 || t.pre >= t.total)
-        if (allDone) {
+        if (newLen === 0) {
           setBatchCompleteOpen(true)
           setToastMessage('已完成寄貨')
           return
-        }
+        } else {
+          const idx = refreshedList.findIndex((b: any) => (b?.customer_info?.customer_id ?? null) === currentCustomerId)
+          let nextIndex = currentIndex
+          if (idx >= 0) {
+            // current customer still present — advance to the following index
+            nextIndex = idx + 1
+          } else {
+            // current customer removed — next customer now sits at same index
+            nextIndex = currentIndex
+          }
 
-        // find next customer index with remaining items
-        let nextIndex: number | null = null
-        for (let j = currentIndex + 1; j < len; j++) {
-          const t = customerTotals[j]
-          if (!(t.total === 0 || t.pre >= t.total)) { nextIndex = j; break }
-        }
-        if (nextIndex == null) {
-          for (let j = 0; j < len; j++) {
-            const t = customerTotals[j]
-            if (!(t.total === 0 || t.pre >= t.total)) { nextIndex = j; break }
+          if (nextIndex < newLen) {
+            _justAutoAdvancedToRef.current = nextIndex
+            setCurrentIndex(nextIndex)
+            setToastMessage('已完成寄貨')
+          } else {
+            setBatchCompleteOpen(true)
+            setToastMessage('已完成寄貨')
           }
         }
-
-        if (nextIndex != null) {
-          _justAutoAdvancedToRef.current = nextIndex
-          setCurrentIndex(nextIndex)
-          setToastMessage('已完成寄貨')
-        } else {
-          setBatchCompleteOpen(true)
-          setToastMessage('已完成寄貨')
-        }
       } catch (e) {
-        // fallback: just show success toast and show completion dialog
-        setToastMessage('已完成寄貨')
         setBatchCompleteOpen(true)
+        setToastMessage('已完成寄貨')
       }
     } catch (e) {
       console.error('handleCompleteShipment failed', e)
@@ -694,17 +828,7 @@ export default function BatchConfirmModal({
         {/* Body */}
         <div className="p-6 space-y-4 max-h-[100%]">
           {/* Summary row */}
-          <div className="flex items-center gap-2 text-sm font-bold">
-                  <div className="text-xs">交易編號</div>
-                  <div className="text-xs">{(function(){
-                    try {
-                      const txs = extractedOrderGroups.flatMap((og:any) => (og.items||[]).map((it:any)=>it.transaction_id).filter(Boolean))
-                      return txs.length ? txs[0] : '—'
-                    } catch(e) {
-                      return '—'
-                    }
-                  })()}</div>
-                </div>    
+              
           <div className="flex items-center justify-between">
             <div className="flex flex-col gap-2">
               <div className="text-xs text-gray-700">共 {extractedOrderGroups.length} 張訂單 | {totalQuantity} 件商品</div>
@@ -716,7 +840,7 @@ export default function BatchConfirmModal({
                 {!currentCustomerHasShipped ? (
                   <button
                     className="px-3 py-1 rounded-full bg-primary text-white text-sm"
-                    onClick={() => handleCompleteShipment()}
+                    onClick={() => handleCompleteShipment(getCurrentTransactionIds())}
                     disabled={loading}
                   >
                     完成寄貨
@@ -732,19 +856,80 @@ export default function BatchConfirmModal({
           {/* Orders list (always expanded) */}
 
           <div className="space-y-3 mt-3">
-              {extractedOrderGroups.length === 0 ? (
-              <div className="text-sm text-gray-500">{loading ? '載入中…' : '沒有選取任何訂單'}</div>
+            {Array.isArray(extractedTransactions) && extractedTransactions.length > 0 ? (
+              <div className="space-y-4">
+                {extractedTransactions.map((tx: any, idx: number) => (
+                  <div key={tx.transaction_id ?? idx} className="bg-gray-100 rounded-lg p-3 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex flex-col w-full">
+                        <div className="flex items-center gap-2 text-sm font-bold">
+                          <div className="text-xs">交易編號</div>
+                          <div className="text-xs">{tx.transaction_id ?? '—'}</div>
+                        </div>
+                        <div className="text-[10px] text-gray-700 mt-1">共 {tx.orders.length} 張訂單 | {tx.total_items} 件商品</div>
+                        <div className="flex items-center justify-between mt-2 gap-2 w-full">
+                          <div className="text-xs mt-2 font-semibold">總額 ${Number(tx.transaction_total).toLocaleString()}</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3 mt-3">
+                      {tx.orders.map((og: any) => (
+                        <OrderCard
+                          key={og.order_number}
+                          order={og}
+                          className="bg-white rounded-xl shadow max-h-96 overflow-hidden"
+                          onItemStatusChange={(itemId: string, newStatus: string) => {
+                            // Optimistically update local bulkData for transactions shape
+                            try {
+                              setBulkData((prev) => {
+                                if (!Array.isArray(prev) || prev.length === 0) return prev
+                                const copy = prev.map((b) => ({ ...b }))
+                                const cur = copy[currentIndex]
+                                if (!cur) return prev
+                                if (Array.isArray(cur.transactions)) {
+                                  cur.transactions = cur.transactions.map((t: any) => ({
+                                    ...t,
+                                    orders: (t.orders || []).map((o: any) => ({
+                                      ...o,
+                                      items: (o.items || []).map((it: any) => {
+                                        const idsToCheck = [it.line_item_id, it.item_id, it.id].map((v: any) => (v == null ? '' : String(v)))
+                                        if (idsToCheck.includes(String(itemId))) {
+                                          return { ...it, status: newStatus }
+                                        }
+                                        return it
+                                      }),
+                                    })),
+                                  }))
+                                } else if (cur.orders_by_status) {
+                                  cur.orders_by_status = Object.fromEntries(Object.entries(cur.orders_by_status).map(([k, v]: any) => {
+                                    const orders = (v?.orders || []).map((o: any) => ({
+                                      ...o,
+                                      items: (o.items || []).map((it: any) => {
+                                        const idsToCheck = [it.line_item_id, it.item_id, it.id].map((v2: any) => (v2 == null ? '' : String(v2)))
+                                        if (idsToCheck.includes(String(itemId))) return { ...it, status: newStatus }
+                                        return it
+                                      }),
+                                    }))
+                                    return [k, { ...(v || {}), orders }]
+                                  }))
+                                }
+                                return copy
+                              })
+                            } catch (e) {
+                              // ignore optimistic update errors
+                            }
+                          }}
+                          overlays={overlaysByOrder[og.order_number ?? String(og.order_number)]}
+                          onOverlaysChange={(ov) => setOverlaysByOrder((prev) => ({ ...prev, [og.order_number ?? String(og.order_number)]: { ...(prev[og.order_number ?? String(og.order_number)] || {}), ...ov } }))}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : (
-              extractedOrderGroups.map((og, ogIdx) => (
-                <OrderCard
-                  key={og.order_number ?? String(ogIdx)}
-                  order={og}
-                  className="bg-white rounded-xl shadow max-h-96 overflow-hidden"
-                  onItemStatusChange={handleItemStatusChange}
-                  overlays={overlaysByOrder[og.order_number ?? String(ogIdx)]}
-                  onOverlaysChange={(ov) => setOverlaysByOrder((prev) => ({ ...prev, [og.order_number ?? String(ogIdx)]: { ...(prev[og.order_number ?? String(ogIdx)] || {}), ...ov } }))}
-                />
-              ))
+              <div className="text-sm text-gray-500">{loading ? '載入中…' : '沒有選取任何訂單'}</div>
             )}
           </div>
 
