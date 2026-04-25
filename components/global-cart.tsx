@@ -499,12 +499,12 @@ export function GlobalCart() {
                                                                 const status = (item as any).status;
                                                                 // Do not render a badge for waitlist items
                                                                 if (status === 'waitlist') return null;
-                                                                const text = status === 'reserved' ? '現貨' : status === 'expired' ? '過期取消' : status;
+                                                                const text = status === 'reserved' ? '少量現貨' : status === 'expired' ? '過期取消' : status;
                                                                 const statusClass = status === 'reserved'
-                                                                    ? 'text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700'
+                                                                    ? 'text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-700'
                                                                     : status === 'expired'
-                                                                        ? 'text-xs px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-500'
-                                                                        : 'text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800';
+                                                                        ? 'text-[10px] px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-500'
+                                                                        : 'text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800';
                                                                 return (
                                                                     <div className={statusClass}>{text}</div>
                                                                 );

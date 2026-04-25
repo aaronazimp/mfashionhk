@@ -116,6 +116,18 @@ export default function OrderCard({ order, className = '', compact = false, stat
                           const remark = (it as any).remark ?? (it as any).remarks
                           return remark ? <div className=" text-gray-400 mt-1 text-[9px] ">{remark}</div> : null
                         })()}
+                        {(() => {
+                          const surcharge = Number((it as any).shipping_surcharge ?? 0)
+                          if (Number.isFinite(surcharge) && surcharge !== 0) {
+                            const fmtS = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2))
+                            return (
+                              <div className="mt-1 text-[9px] text-gray-500 ">
+                                重件附加費 $  {fmtS(surcharge)}
+                              </div>
+                            )
+                          }
+                          return null
+                        })()}
                       </div>
                     </div>
 

@@ -230,7 +230,7 @@ export default function OrderCard({ order, className = '', compact = false, stat
     try {
       const it = items[idx]
       const s = String((it as any)?.status ?? '').toLowerCase().trim().replace(/[-_]/g, '')
-      const isPrePendingToShip = s === 'prependingtoship'
+      const isPrePendingToShip = s === 'prependingtoship' || s === 'pendingtoship'
       if (isPrePendingToShip) {
         // behave like `revealed[idx] === 'left'` branch: allow closing (leftwards drag)
         if (deltaX <= 0) {
@@ -372,7 +372,7 @@ export default function OrderCard({ order, className = '', compact = false, stat
     // consider items already marked `pre_pending_to_ship` as effectively revealed-left
     const _it = items[idx]
     const _s = String((_it as any)?.status ?? '').toLowerCase().trim().replace(/[-_]/g, '')
-    const _isPrePendingToShip = _s === 'prependingtoship'
+    const _isPrePendingToShip = _s === 'prependingtoship' || _s === 'pendingtoship'
     let _isPreorderBadge = false
     try {
       const maybe = (_it as any) || {}
@@ -670,7 +670,7 @@ export default function OrderCard({ order, className = '', compact = false, stat
           const tx = translates[idx] ?? '0px'
 
           const _normStatus = String(it.status ?? '').toLowerCase().trim().replace(/[-_]/g, '')
-          const isPrePendingToShip = _normStatus === 'prependingtoship'
+          const isPrePendingToShip = _normStatus === 'prependingtoship' || _normStatus === 'pendingtoship'
           const isShipped = _normStatus === 'shipped'
 
           const priceNum = Number((it as any).price ?? NaN)
@@ -681,7 +681,7 @@ export default function OrderCard({ order, className = '', compact = false, stat
           const maybe = (it as any) || {}
           const isWaitlist = !!(maybe.is_waitlist_item || maybe.isWaitlist || maybe.is_waitlist)
           const normForPre = _normStatus
-          const isPreorder = showPreorderBadge && (isWaitlist || normForPre === 'preorder' || normForPre === 'preordered' || normForPre === 'prependingtoship' || /pre.*order/.test(normForPre))
+          const isPreorder = showPreorderBadge && (isWaitlist || normForPre === 'preorder' || normForPre === 'preordered' || /pre.*order/.test(normForPre))
           
           return (
             <div key={it.item_id ?? idx} className={isCanceled ? 'relative opacity-40' : 'relative'}>
@@ -717,11 +717,11 @@ export default function OrderCard({ order, className = '', compact = false, stat
                   <div
                     className={`h-full flex items-center justify-center transition-all duration-150 rounded-lg overflow-hidden`}
                     style={{
-                      // If fully revealed by gesture, occupy full width. If the
-                      // item is already `pre_pending_to_ship`, render a smaller
-                      // left overlay so the item details remain visible instead
-                      // of being fully covered.
-                      width: String(revealed[idx]) === 'left' ? '100%' : (isPrePendingToShip ? '28%' : overlayWidthForSide(idx, 'left')),
+                      // If fully revealed by gesture, occupy full width. For
+                      // items in `pre_pending_to_ship` state we should also
+                      // display the left overlay across the whole list item
+                      // (previously this only covered a small portion).
+                      width: String(revealed[idx]) === 'left' ? '100%' : (isPrePendingToShip ? '100%' : overlayWidthForSide(idx, 'left')),
                       backgroundColor: 'rgba(16,185,129,0.89)',
                       pointerEvents: 'none',
                       transformOrigin: 'left center',
@@ -782,7 +782,7 @@ export default function OrderCard({ order, className = '', compact = false, stat
                     </div>
                     <div className="flex-1 min-w-0 ">
                         <div className="flex items-center gap-2">
-                          <div className="text-sm font-semibold text-gray-900 ">{it.sku_code ?? it.sku}</div>
+                          <div className="text-xs font-semibold text-gray-900 ">{it.sku_code ?? it.sku}</div>
                           {isPreorder ? (
                             <div className="text-xs text-black">(預購)</div>
                           ) : null}
@@ -810,10 +810,12 @@ export default function OrderCard({ order, className = '', compact = false, stat
                               maybe.isWaitlist ||
                               maybe.is_waitlist
                             )
-                            const isPreorder = showPreorderBadge && (isWaitlist || norm === 'preorder' || norm === 'preordered' || norm === 'prependingtoship' || /pre.*order/.test(norm))
+                            const isPreorder = showPreorderBadge && (isWaitlist || norm === 'preorder' || norm === 'preordered' || /pre.*order/.test(norm))
                             return isPreorder ? (
                               <button
                                 aria-label="Open restock sidebar"
+                                onPointerDown={(e) => { e.stopPropagation() }}
+                                onPointerUp={(e) => { e.stopPropagation() }}
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   try {
@@ -838,7 +840,7 @@ export default function OrderCard({ order, className = '', compact = false, stat
                           })()}
                           <div>{statusBadge ? statusBadge(it.status) : <OrderStatusBadge status={it.status} />}</div>
                         </div>
-                        <div className="text-sm font-bold text-gray-900 pt-2 pr-2 mt-2">{total != null ? `$${fmt(total)}` : `$${it.price ?? '—'}`}</div>
+                        <div className="text-xs font-bold text-gray-900 pt-2 pr-2 mt-2">{total != null ? `$${fmt(total)}` : `$${it.price ?? '—'}`}</div>
                     </div>
                   </div>
                 </div>

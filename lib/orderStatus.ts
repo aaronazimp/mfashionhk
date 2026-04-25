@@ -28,7 +28,7 @@ export const OrderStatusLabel: Record<string, string> = {
   allocated: '待通知',
   confirmed: '待付款',
   paid: '待核數',
-  verified: '已核數',
+  verified: '待執貨',
   completed: '已完成',
   pending_to_ship: '待寄出',
   pre_pending_to_ship: '執貨中',

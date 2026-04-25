@@ -1,9 +1,19 @@
 export interface WaitlistOrder {
-  order_id: string
+  // new RPC uses `id` (uuid) but keep `order_id` for backwards-compat
+  id?: string
+  order_id?: string
   created_at: string
-  order_number: string
-  customer_name: string
-  quantity_needed: number
+  order_number?: string
+  customer_name?: string | null
+  // new field names from RPC
+  quantity?: number
+  quantity_needed?: number
+  sku_id?: number
+  variation_id?: number
+  whatsapp?: string | null
+  transaction_id?: string | null
+  sku_code_snapshot?: string | null
+  variation_snapshot?: string | null
   [key: string]: any
 }
 
@@ -28,6 +38,9 @@ export interface RestockColor {
   // counts of orders on waitlist / confirmed
   waitlist_orders_count?: number
   confirmed_orders_count?: number
+    calculated_stock?: number
+    total_waitlist_orders?: number
+    remaining_preorder_spots?: number
   [key: string]: any
 }
 
@@ -52,10 +65,14 @@ export interface RestockSku {
 // Backwards-compatible representation for places that expect a single variation
 export interface RestockVariation {
   variation_id: number
+  // remaining available preorder spots reported by RPC
+  remaining_preorder_spots?: number
   size?: string
   color: string
   // current physical stock for this variation (RPC)
   current_stock: number
+  // SKU id for this variation (RPC)
+  sku_id?: number
   // number of items ordered for this variation (RPC)
   ordered_qty?: number
   // aggregated orders count for this variation (RPC)
@@ -70,6 +87,7 @@ export interface RestockVariation {
   waitlist_orders_count?: number
   confirmed_orders_count?: number
   current_quota?: number
+
   reels_quota?: number
   waitlist_count?: number
   // keep legacy aliases for older UI code
@@ -80,6 +98,8 @@ export interface RestockVariation {
   waitlistOrders?: any[]
   // newer field matching RPC
   waitlist_orders?: WaitlistOrder[]
+  // calculated stock value mapped from server responses
+  calculated_stock?: number
 }
 
 // Wrapper shape returned by the RPC: an array of objects each containing
@@ -94,6 +114,8 @@ export interface RestockAllocationData {
   total_sku_confirmed_qty?: number
   total_waitlist_orders_count?: number
   total_confirmed_orders_count?: number
+  // array of waitlist orders returned by RPC
+  waitlist_orders?: WaitlistOrder[]
   [key: string]: any
 }
 
@@ -186,18 +208,7 @@ export interface SearchCustomerHistoryResponse {
 
 
 
-export interface ActiveCustomerRecords {
-  customer_info: {
-    phone?: string | null
-    customer_id?: string | null
-    customer_name?: string | null
-  }
-  // RPC shape: maps status -> object containing orders array and status_total
-  orders_by_status: Record<string, {
-    orders: OrderGroup[]
-    status_total: number
-  }>
-}
+
 
 // Pagination metadata used by multiple RPC responses
 export interface PaginationMetadata {
@@ -239,8 +250,43 @@ export interface MasterOrderListResponse {
   status_counts?: Record<string, number>
 }
 
-// Backwards-compat alias (updated name preferred)
-export type BulkCustomerOrderRecord = ActiveCustomerRecords
+// New customer transactions output shape (matches provided example)
+export interface TransactionOrder {
+  items: OrderLineItem[]
+  order_total?: number
+  order_number?: string
+  order_status?: string
+  order_item_count?: number
+  [key: string]: any
+}
+
+export interface Transaction {
+  orders: TransactionOrder[]
+  total_items?: number
+  total_orders?: number
+  transaction_id?: string
+  payment_proof_url?: string | null
+  transaction_total?: number
+  transaction_status?: string
+  transaction_group_id?: string
+  [key: string]: any
+}
+
+export interface BulkCustomerOrderRecord {
+  transactions: Transaction[]
+  customer_info: {
+    phone?: string | null
+    customer_id?: string | null
+    customer_name?: string | null
+  }
+  // Optional shape returned by some RPCs / UI code: map of buckets to orders
+  orders_by_status?: Record<string, any>
+}
+
+// Backwards-compatible alias: some components import `ActiveCustomerRecords`
+export type ActiveCustomerRecords = BulkCustomerOrderRecord
+
+
 
 // UI component types used by `OrderCard`
 export type OCItem = {
@@ -255,6 +301,9 @@ export type OCItem = {
   thumbnail?: string | null
   imageUrl?: string | null
   variation?: string
+  is_waitlist_item?: boolean
+  waitlist_filled_at?: string | null
+  restock_notified_at?: string | null
 }
 
 export type OCOrder = {
@@ -376,6 +425,7 @@ export interface CustomerOrderHistoryResponse {
   total_orders: number
   customer_name: string
   transaction_id?: string | null
+  payment_proof_url?: string | null
 }
 
 /**

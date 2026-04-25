@@ -1,12 +1,23 @@
 // src/services/orderService.ts
 import { supabase } from '@/lib/supabase'; // Adjust this path to your Supabase client
 
-import type { OrderLineItem, OrderGroup, ActiveCustomerRecords, CustomerOrderHistoryResponse, MasterOrderRow, MasterOrderListResponse, PaginationMetadata, MasterOrderItem } from '@/types/order'
+import type { OrderLineItem, OrderGroup, BulkCustomerOrderRecord, CustomerOrderHistoryResponse, MasterOrderRow, MasterOrderListResponse, PaginationMetadata, MasterOrderItem } from '@/types/order'
 import type { CustomerOrdersResponse } from '@/types/orders'
 import type { SingleSkuDetails, Product } from '@/lib/products'
 
 
 // Also in src/services/orderService.ts
+
+// Emit RPC debug events to window so the UI debug panel can listen
+function emitRpcDebug(name: string, args: any, data: any, error: any) {
+  try {
+    if (typeof window !== 'undefined' && window?.dispatchEvent) {
+      window.dispatchEvent(new CustomEvent('rpc:response', { detail: { name, args, data, error, ts: Date.now() } }));
+    }
+  } catch (e) {
+    // ignore
+  }
+}
 
 /**
  * Fetches the deeply nested active orders for an array of customers.
@@ -16,7 +27,7 @@ import type { SingleSkuDetails, Product } from '@/lib/products'
 export async function fetchBulkCustomerOrders(
   customerIds: string[], 
   statusFilter: string = 'all'
-): Promise<ActiveCustomerRecords[]> {
+): Promise<BulkCustomerOrderRecord[]> {
   
   // Safety check to prevent empty array errors
   if (!customerIds || customerIds.length === 0) return [];
@@ -32,7 +43,7 @@ export async function fetchBulkCustomerOrders(
   }
 
   // Supabase returns 'any', so we cast it to our beautiful TypeScript interface
-  return data as ActiveCustomerRecords[];
+  return data as BulkCustomerOrderRecord[];
 }
 
 /**
@@ -223,39 +234,79 @@ export async function markOrderItemPrePendingToShip(itemId: string): Promise<any
   // Debug: log the incoming id so we can trace why updates may not apply
   console.debug('[markOrderItemPrePendingToShip] called with itemId:', itemId)
 
-  // Update the row by primary `id` column. `reels_orders.id` is required.
-  const { data, error } = await supabase
-    .from('reels_orders')
-    .update({ status: 'pre_pending_to_ship' })
-    .eq('id', itemId)
+  // Try updating by primary id first; if no rows affected, try fallback columns.
+  try {
+    let res = await supabase
+      .from('reels_orders')
+      .update({ status: 'pre_pending_to_ship' })
+      .eq('id', itemId)
 
-  // Debug: log the Supabase response for troubleshooting
-  console.debug('[markOrderItemPrePendingToShip] supabase response:', { data, error })
+    console.debug('[markOrderItemPrePendingToShip] attempt id ->', { data: res.data, error: res.error })
+    if (!res.error && Array.isArray(res.data) && (res.data as any).length > 0) return res.data
 
-  if (error) {
-    console.error('markOrderItemPrePendingToShip error:', error)
-    throw new Error(error.message)
+    // Fallback: try item_id
+    res = await supabase
+      .from('reels_orders')
+      .update({ status: 'pre_pending_to_ship' })
+      .eq('item_id', itemId)
+    console.debug('[markOrderItemPrePendingToShip] attempt item_id ->', { data: res.data, error: res.error })
+    if (!res.error && Array.isArray(res.data) && (res.data as any).length > 0) return res.data
+
+    // Fallback: try line_item_id
+    res = await supabase
+      .from('reels_orders')
+      .update({ status: 'pre_pending_to_ship' })
+      .eq('line_item_id', itemId)
+    console.debug('[markOrderItemPrePendingToShip] attempt line_item_id ->', { data: res.data, error: res.error })
+    if (!res.error && Array.isArray(res.data) && (res.data as any).length > 0) return res.data
+
+    // If nothing matched, throw the last error (if any) or a not-found message
+    if (res.error) {
+      console.error('markOrderItemPrePendingToShip error:', res.error)
+      throw new Error(res.error.message)
+    }
+
+    throw new Error('markOrderItemPrePendingToShip: no matching row found for provided id')
+  } catch (err: any) {
+    console.error('markOrderItemPrePendingToShip exception:', err)
+    throw err
   }
-
-  return data
 }
 
 /**
  * Mark a single order item back to `verified` in `reels_orders`.
  */
 export async function markOrderItemVerified(itemId: string): Promise<any> {
-  const { data, error } = await supabase
-    .from('reels_orders')
-    .update({ status: 'verified' })
-  
-    .eq('id', itemId)
+  try {
+    let res = await supabase
+      .from('reels_orders')
+      .update({ status: 'verified' })
+      .eq('id', itemId)
 
-  if (error) {
-    console.error('markOrderItemVerified error:', error)
-    throw new Error(error.message)
+    if (!res.error && Array.isArray(res.data) && (res.data as any).length > 0) return res.data
+
+    res = await supabase
+      .from('reels_orders')
+      .update({ status: 'verified' })
+      .eq('item_id', itemId)
+    if (!res.error && Array.isArray(res.data) && (res.data as any).length > 0) return res.data
+
+    res = await supabase
+      .from('reels_orders')
+      .update({ status: 'verified' })
+      .eq('line_item_id', itemId)
+    if (!res.error && Array.isArray(res.data) && (res.data as any).length > 0) return res.data
+
+    if (res.error) {
+      console.error('markOrderItemVerified error:', res.error)
+      throw new Error(res.error.message)
+    }
+
+    throw new Error('markOrderItemVerified: no matching row found for provided id')
+  } catch (err: any) {
+    console.error('markOrderItemVerified exception:', err)
+    throw err
   }
-
-  return data
 }
 
 /**
@@ -297,6 +348,10 @@ export async function bulkMoveToPendingToShip(
   // Log full RPC response for debugging (helps trace silent failures)
   console.debug('[bulkMoveToPendingToShip] supabase response:', { data, error })
 
+  try {
+    emitRpcDebug('bulk_move_to_pending_to_ship', { ids }, data, error);
+  } catch (e) {}
+
   if (error) {
     console.error('bulk_move_to_pending_to_ship RPC error:', error)
     throw new Error(error.message)
@@ -321,6 +376,10 @@ export async function bulkMarkAsShipped(
   })
 
   console.debug('[bulkMarkAsShipped] supabase response:', { data, error })
+
+  try {
+    emitRpcDebug('bulk_mark_as_shipped', { ids }, data, error);
+  } catch (e) {}
 
   if (error) {
     console.error('bulk_mark_as_shipped RPC error:', error)
@@ -538,6 +597,10 @@ export async function getRestockAllocationData(
 
   console.log('get_restock_allocation_data response (orderService)', { data, error })
 
+  try {
+    emitRpcDebug('get_restock_allocation_data', { p_sku_id: id }, data, error);
+  } catch (e) {}
+
   if (error) {
     console.error('get_restock_allocation_data RPC error:', error)
     throw new Error(error.message)
@@ -604,6 +667,10 @@ export async function processBulkRestock(p_payload: any[]): Promise<any> {
 
   console.log('process_bulk_restock response (orderService)', { data, error })
 
+  try {
+    emitRpcDebug('process_bulk_restock', { p_payload }, data, error);
+  } catch (e) {}
+
   if (error) {
     console.error('process_bulk_restock RPC error:', error)
     throw new Error(error.message)
@@ -648,6 +715,10 @@ export async function getMasterOrderList(
     p_per_page,
     p_urgent_only,
   });
+
+  try {
+    emitRpcDebug('get_master_order_list', { p_status_filter, p_page, p_per_page, p_urgent_only }, rpcData, error);
+  } catch (e) {}
 
   if (error) {
     console.error('get_master_order_list RPC error:', error);
@@ -723,6 +794,36 @@ export async function getSingleOrderDetails(
 
   if (error) {
     console.error('get_single_order_details RPC error:', error)
+    throw new Error(error.message)
+  }
+
+  return data
+}
+
+/**
+ * Mark a list of transactions as having had restock notifications sent.
+ * RPC: mark_restock_notified(p_transaction_ids TEXT[])
+ */
+export async function markRestockNotified(
+  transactionIds: string[]
+): Promise<any> {
+  if (!Array.isArray(transactionIds) || transactionIds.length === 0) return []
+
+  const ids = transactionIds.map((t) => (t == null ? '' : String(t))).filter(Boolean)
+  console.debug('[markRestockNotified] calling RPC with', ids)
+
+  const { data, error } = await supabase.rpc('mark_restock_notified', {
+    p_transaction_ids: ids,
+  })
+
+  console.debug('[markRestockNotified] supabase response:', { data, error })
+
+  try {
+    emitRpcDebug('mark_restock_notified', { ids }, data, error)
+  } catch (e) {}
+
+  if (error) {
+    console.error('mark_restock_notified RPC error:', error)
     throw new Error(error.message)
   }
 

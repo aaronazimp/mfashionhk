@@ -2,6 +2,7 @@ import { getCustomerOrderHistory } from '@/lib/orderService'
 import type { CustomerOrderHistoryResponse } from '@/types/order'
 import OrderHistoryForm from '@/components/order-history-form'
 import OrderCardReadOnly from '@/components/OrderCardReadOnly'
+import PaymentProofViewer from '@/components/PaymentProofViewer'
 import Link from 'next/link'
 
 type Props = {
@@ -11,13 +12,16 @@ type Props = {
 export default async function OrderHistoryPage({ searchParams }: Props) {
   // `searchParams` can be a Promise in some Next.js setups — unwrap it first
   const resolvedSearchParams = await (searchParams as any)
-  const whatsapp = Array.isArray(resolvedSearchParams?.whatsapp)
-    ? String(resolvedSearchParams?.whatsapp[0])
-    : resolvedSearchParams?.whatsapp
+  // Accept multiple query param names for compatibility with generated links
+  const whatsapp = ((): string | undefined => {
+    const v = resolvedSearchParams?.whatsapp ?? resolvedSearchParams?.phone ?? resolvedSearchParams?.phoneNumber
+    return Array.isArray(v) ? String(v[0]) : v
+  })()
 
-  const transactionId = Array.isArray(resolvedSearchParams?.transaction_id)
-    ? String(resolvedSearchParams?.transaction_id[0])
-    : resolvedSearchParams?.transaction_id ?? ''
+  const transactionId = ((): string => {
+    const v = resolvedSearchParams?.transaction_id ?? resolvedSearchParams?.tx ?? resolvedSearchParams?.transaction
+    return Array.isArray(v) ? String(v[0]) : (v ?? '')
+  })()
 
   // Sticky buttons component (rendered in both form and results views)
   const StickyButtons = () => (
@@ -60,6 +64,7 @@ export default async function OrderHistoryPage({ searchParams }: Props) {
     <div className="p-6 max-w-[90vw] mx-auto">
       <h1 className="text-sm font-semibold mb-9 text-center">訂單記錄</h1>
       <p className="text-sm font-bold">交易編號: {payload.transaction_id}</p>
+      
       <div className="flex-col gap-2 mt-2">
       <p className="text-xs mb-2">顧客名稱: { payload.customer_name} | WhatsApp: {payload.whatsapp} </p>
       <p className="text-xs"> 共 {payload.total_orders}張訂單</p>
@@ -78,6 +83,13 @@ export default async function OrderHistoryPage({ searchParams }: Props) {
               </div>
             </div>
           ))}
+
+          {payload.payment_proof_url && (
+        <div className="mt-4 flex flex-col items-center">
+          <p className="text-xs mb-2">付款憑證</p>
+          <PaymentProofViewer src={payload.payment_proof_url} alt="付款憑證" />
+        </div>
+      )}
       </div>
       {/* Sticky return buttons */}
       <StickyButtons />

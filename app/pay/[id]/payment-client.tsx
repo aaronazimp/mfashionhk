@@ -119,6 +119,7 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
       if (!normalized.pay_now_groups && payload.pay_now_groups) normalized.pay_now_groups = payload.pay_now_groups;
 
       setLiveOrder((prev: PaymentPageOrder) => ({ ...prev, ...normalized }));
+      return normalized;
     } catch {}
   };
   // State for live order status
@@ -129,25 +130,49 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
   // Subscribe to Supabase Realtime for instant updates
   useEffect(() => {
     // Listen to changes on the reels_orders table for this order
-    const channel = supabase
-      .channel('reels-order-status')
-      .on(
-        'postgres_changes',
-        {
-          
-          event: '*',
-          schema: 'public',
-          table: 'reels_orders',
-          // No filter for debugging: listen to all changes
-        },
-        (payload) => {
-          console.log('[Supabase Realtime] reels_orders payload:', payload);
-          if (payload.new) {
-            setLiveOrder((prev) => ({ ...prev, ...payload.new }));
-          }
+    // Filter realtime events to this transaction so we only react to relevant changes.
+    const txId = String(order.transaction_id ?? order.id ?? '');
+    const channel = supabase.channel(`reels-order-status-${txId}`);
+    // Subscribe scoped to this transaction to avoid relying on server-side
+    // status filters (which may be sensitive to quoting or casing).
+    // Use event '*' so we catch any change that may affect status.
+    (channel as any).on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'reels_orders',
+        // Filter by transaction_id on the DB row so we only receive events
+        // for the specific order we're viewing.
+        filter: `transaction_id=eq.${txId}`,
+      },
+      async (payload: any) => {
+        try {
+          console.log('[Supabase Realtime] reels_orders payload (tx-scoped):', payload);
+          const newRow = payload.new as any;
+          const oldRow = payload.old as any;
+          // If payload contains no `new` row (e.g., a delete), ignore
+          if (!newRow) return;
+          // Only act when status actually changed (or when we don't have oldRow)
+          if (oldRow && oldRow.status === newRow.status) return;
+          // Refresh the order state from the server
+          await fetchOrder(order.id, setLiveOrder);
+        } catch (e) {
+          console.error('Realtime status handler error:', e);
         }
-      )
-      .subscribe();
+      }
+    );
+
+    // subscribe and log potential subscription errors
+    (async () => {
+      try {
+        const res = await (channel as any).subscribe();
+        if ((res as any)?.error) console.error('realtime subscribe error', (res as any).error);
+        else console.debug('realtime subscribed for tx', txId);
+      } catch (err) {
+        console.error('realtime subscribe threw', err);
+      }
+    })();
     return () => {
       supabase.removeChannel(channel);
     };
@@ -175,6 +200,12 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
   const payNowGroups: Record<string, PaymentPageItem[]> = (liveOrder.pay_now_groups ?? {}) as Record<string, PaymentPageItem[]>;
   const waitlistItems = liveOrder.items_waitlist ?? [];
   const cancelledItems = liveOrder.items_cancelled ?? [];
+
+  // Treat order as cancelled if server sets top-level status OR if there are
+  // no pay-now groups but we have cancelled items (RPC may only mark rows).
+  const isOrderCancelled = (liveOrder.status === 'cancelled') || (
+    Object.keys(payNowGroups).length === 0 && cancelledItems.length > 0
+  );
 
   // Debug help: log counts so we can confirm data present
   // eslint-disable-next-line no-console
@@ -233,14 +264,14 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
 
   return (
     <ErrorBoundary>
-      <div className="min-h-screen bg-white flex items-center justify-center p-4">
+      <div className="min-h-[90vh] bg-white flex items-center justify-center p-4">
         <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in duration-500 relative z-[9999]">
           <div className="p-6 md:p-8 space-y-6">
             
             {/* Check if order is cancelled */}
-            {liveOrder.status === 'cancelled' ? (
-              <div className="min-h-screen bg-white flex items-center justify-center p-4 font-sans">
-                <div className="bg-white p-8 rounded-2xl shadow-xl text-center max-w-md w-full space-y-6">
+            {isOrderCancelled ? (
+              <div className="bg-white flex items-center justify-center p-4 font-sans">
+                <div className="bg-white p-8 text-center max-w-md w-full space-y-6">
                   <div className=" flex items-center justify-center mx-auto mb-4">
                     <svg className="w-10 h-10 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                   </div>
@@ -258,9 +289,7 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
                   <a href="/flash-sale" className="mt-9 text-xs p-2 w-full h-[30px] bg-[#A87C73] text-white rounded-lg font-semibold hover:bg-[#986B62] transition">
                     返回選購商品
                   </a>
-                  <div className="">
-                    <p className="mt-4 text-[10px] text-gray-400">流水號: {liveOrder.transaction_id || liveOrder.order_number || liveOrder.id.slice(0, 8)}</p>
-                  </div>
+                 
                 </div>
               </div>
             ) : (
@@ -278,6 +307,28 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
                   <div className={`h-1 flex-1 ${currentStep >= 4 ? 'bg-[#A87C73]' : 'bg-gray-200'}`}></div>
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${currentStep >= 4 ? 'bg-[#A87C73] text-white' : 'bg-gray-200 text-gray-600'}`}>4</div>
                 </div>
+
+                {/* Payment Deadline Timer - show across all steps (unless submitted or cancelled) */}
+                {(liveOrder.payment_deadline || liveOrder.deadline) && !isPaymentSubmitted && liveOrder.status !== 'cancelled' && (
+                  <div className="mb-4 text-[10px] text-gray-700 rounded p-2 text-center">
+                    付款截止時間: <CustomCountdownTimer targetDate={new Date((liveOrder.payment_deadline || liveOrder.deadline) as string)} onEnd={async () => {
+                      // Try an immediate re-fetch. If server hasn't marked cancelled yet,
+                      // poll briefly a few times so the UI updates without a manual refresh.
+                      try {
+                        const res = await fetchOrder(order.id, setLiveOrder);
+                        if (res && res.status === 'cancelled') return;
+                        const attempts = 6;
+                        for (let i = 0; i < attempts; i++) {
+                          await new Promise((r) => setTimeout(r, 1000));
+                          const r2 = await fetchOrder(order.id, setLiveOrder);
+                          if (r2 && r2.status === 'cancelled') break;
+                        }
+                      } catch (e) {
+                        // ignore — we attempted to refresh state
+                      }
+                    }} />
+                  </div>
+                )}
 
                 {/* Step 1: Item Breakdown */}
                 {currentStep === 1 && (
@@ -317,11 +368,7 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
                     
 
                     {/* Payment Deadline Timer (moved above total) */}
-                    {(liveOrder.payment_deadline || liveOrder.deadline) && !isPaymentSubmitted && liveOrder.status !== 'cancelled' && (
-                      <div className="mb-4 text-[10px] text-gray-700 rounded p-2 text-center">
-                        付款截止時間: <CustomCountdownTimer targetDate={new Date((liveOrder.payment_deadline || liveOrder.deadline) as string)} onEnd={() => fetchOrder(order.id, setLiveOrder)} />
-                      </div>
-                    )}
+                    {/* (Timer now shown across all steps) */}
 
                     <div className="text-center">
                       <div className="text-sm font-black text-black tracking-tight tabular-nums">應付金額 HK$ {displayAmount.toFixed(0)}</div>
@@ -372,12 +419,16 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
                         <TabsContent value="payme" className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
                           <div className="bg-red-50/50 border border-red-100 rounded-xl p-4 text-center space-y-3">
                             <p className="text-xs text-gray-600">即將推出</p>
-                            <Link href="" target="_blank" rel="noopener noreferrer" className="block w-full">
-                                <button className="w-full bg-[#E53535] hover:bg-[#D62E2E] text-white text-xs font-bold py-3 px-4 rounded-xl shadow-md transition-transform active:scale-95 flex items-center justify-center gap-2">
+                            <div className="block w-full">
+                              <button
+                                disabled
+                                title="暫時停用"
+                                className="w-full bg-[#E53535] text-white text-xs font-bold py-3 px-4 rounded-xl shadow-md opacity-60 cursor-not-allowed flex items-center justify-center gap-2"
+                              >
                                 <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm.31-8.86c-1.77-.45-2.34-.94-2.34-1.67 0-.84.79-1.43 2.1-1.43 1.38 0 1.9.66 1.94 1.64h1.71c-.05-1.34-.87-2.57-2.49-2.97V5H10.9v1.69c-1.51.32-2.72 1.3-2.72 2.81 0 1.79 1.49 2.69 3.66 3.21 1.95.46 2.34 1.15 2.34 1.87 0 .53-.39 1.39-2.1 1.39-1.6 0-2.23-.72-2.32-1.64H8.04c.1 1.7 1.36 2.66 2.86 2.97V19h2.34v-1.67c1.52-.29 2.72-1.16 2.73-2.77-.01-2.2-1.9-2.96-3.66-3.42z" /></svg>
                                 PayMe HKD ${displayAmount.toFixed(0)}
                               </button>
-                            </Link>
+                            </div>
                           </div>
                         </TabsContent>
 
@@ -406,19 +457,14 @@ export default function PaymentClient({ order }: { order: PaymentPageOrder }) {
                         {/* WeChat / Alipay Option */}
                         <TabsContent value="wallets" className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
                           <div className="space-y-3">
-                            {/* WeChat Pay */}
-                            <Link href="" target="_blank" className="block w-full">
-                              <button className="text-xs w-full bg-[#00C250] hover:bg-[#00AC47] text-white font-bold py-3 px-4 rounded-xl shadow-md transition-transform active:scale-95 flex items-center justify-center gap-2">
+                            <div className="block w-full">
+                              <div
+                                title="即將推出"
+                                className="text-xs w-full bg-gray-100 text-gray-600 font-bold py-3 px-4 rounded-xl border border-gray-200 flex items-center justify-center"
+                              >
                                 即將推出
-                              </button>
-                            </Link>
-
-                            {/* AlipayHK */}
-                            <Link href="" target="_blank" className="block w-full">
-                              <button className="text-xs w-full bg-[#00A3EE] hover:bg-[#008AC9] text-white font-bold py-3 px-4 rounded-xl shadow-md transition-transform active:scale-95 flex items-center justify-center gap-2">
-                                即將推出
-                              </button>
-                            </Link>
+                              </div>
+                            </div>
                           </div>
                         </TabsContent>
 

@@ -128,7 +128,7 @@ export default function BatchConfirmModal({
     // Show orders for the selected customer only. RPC `orders_by_status` maps status -> { orders: OrderGroup[], status_total?: number }
     const b = bulkData[currentIndex]
     const groups = b
-      ? Object.values(b.orders_by_status).flatMap((s: any) => (Array.isArray(s) ? s : s?.orders ?? []))
+      ? Object.values(b?.orders_by_status ?? {}).flatMap((s: any) => (Array.isArray(s) ? s : s?.orders ?? []))
       : []
 
     return groups.map((og: any) => ({

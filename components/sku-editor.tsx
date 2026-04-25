@@ -27,6 +27,7 @@ import {
 import { Spinner } from '@/components/ui/spinner'
 import NativeVideoPlayer from '@/components/native-video-player'
 import { useToast } from '@/hooks/use-toast'
+import ImageFullscreen from '@/components/ImageFullscreen'
 
 const todayLocal = (() => {
   const d = new Date()
@@ -314,6 +315,9 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
   // Lightbox state
   const [isLightboxOpen, setIsLightboxOpen] = useState(false)
   const [currentSlide, setCurrentSlide] = useState(0)
+  const [imageFullscreenOpen, setImageFullscreenOpen] = useState(false)
+  const [fullscreenSrc, setFullscreenSrc] = useState<string | null>(null)
+  const [fullscreenAlt, setFullscreenAlt] = useState<string | undefined>(undefined)
   
   const [isChanged, setIsChanged] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -341,6 +345,8 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
   const [activeSizeName, setActiveSizeName] = useState<string | null>(null)
   // Confirm remove state for variations/colors
   const [confirmState, setConfirmState] = useState<{ open: boolean; type?: 'variation' | 'color'; vidx?: number; cidx?: number }>({ open: false })
+  // Confirm saving when SKU date is before today
+  const [pastDateConfirmOpen, setPastDateConfirmOpen] = useState(false)
   // Local flags for discount / upsell and surcharge
   const [isDiscount, setIsDiscount] = useState<boolean>(!!product.isSale)
   const [isUpsell, setIsUpsell] = useState<boolean>(!!product.isUpsell)
@@ -437,9 +443,28 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
     // initialize local copy from existing RPC variations (deep copy)
     const existing = product.rawRpc?.variations || []
     try {
-      setLocalVariations(JSON.parse(JSON.stringify(existing)))
+      // Deep-copy and ensure each color has a computed `total_available` local field
+      const parsed = JSON.parse(JSON.stringify(existing))
+      const withTotals = (parsed || []).map((v: any) => ({
+        ...v,
+        colors: (v.colors || []).map((c: any) => {
+          const stock = Number(c.calculated_stock ?? c.stock ?? 0)
+          const remaining = Number(c.remaining_preorder_spots ?? 0)
+          return { ...c, total_available: Number(c.total_available ?? (stock + remaining)) }
+        })
+      }))
+      setLocalVariations(withTotals)
     } catch (e) {
-      setLocalVariations(existing.slice())
+      // Fallback: ensure totals even on shallow copy
+      const withTotals = (existing || []).map((v: any) => ({
+        ...v,
+        colors: (v.colors || []).map((c: any) => {
+          const stock = Number(c.calculated_stock ?? c.stock ?? 0)
+          const remaining = Number(c.remaining_preorder_spots ?? 0)
+          return { ...c, total_available: Number(c.total_available ?? (stock + remaining)) }
+        })
+      }))
+      setLocalVariations(withTotals)
     }
     setIsVariationDialogOpen(true)
   }
@@ -472,7 +497,7 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
         raw_stock: 0,
         raw_quota: 0,
         reels_quota: 0,
-        total_supply: 0,
+        total_available: 0,
         total_locked: 0,
         available_stock: 0,
       }]
@@ -505,7 +530,15 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
   const updateColorField = (vidx: number, cidx: number, field: string, value: any) => {
     setLocalVariations(prev => prev.map((v, i) => {
       if (i !== vidx) return v
-      const nextColors = (v.colors || []).map((c: any, j: number) => j === cidx ? { ...c, [field]: value } : c)
+      const nextColors = (v.colors || []).map((c: any, j: number) => {
+        if (j !== cidx) return c
+        const updated = { ...c, [field]: value }
+        // Recompute total_available when quota or stock-related fields change
+        const stock = Number(updated.calculated_stock ?? updated.stock ?? updated.raw_stock ?? 0)
+        const remaining = Number(updated.remaining_preorder_spots ?? updated.reels_quota ?? updated.raw_quota ?? 0)
+        updated.total_available = stock + remaining
+        return updated
+      })
       return { ...v, colors: nextColors }
     }))
   }
@@ -526,6 +559,17 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
           })
           return
         }
+       
+        // Additional validation: ensure user-entered quota is not less than total waitlist orders
+        const waitlistCount = Number(c.total_waitlist_orders)
+        if (quota < waitlistCount) {
+          toast({
+            title: '儲存失敗',
+            description: `變體 ${v.size || '-'} / ${c.color || '-'} 的 預售配額(${quota}) 不能小於 等候訂單(${waitlistCount})，請調整後再儲存。`,
+            variant: 'destructive',
+          })
+          return
+        }
       }
     }
     // Normalize variations so payload uses numeric `stock` and `reels_quota` fields
@@ -533,8 +577,10 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
       ...v,
       colors: (v.colors || []).map((c: any) => ({
         ...c,
-        stock: Number(c.raw_stock ?? c.stock ?? 0),
-        reels_quota: Number(c.reels_quota ?? c.raw_quota ?? 0),
+        // Prefer calculated_stock (aggregate) for payload, fallback to raw_stock/stock
+        stock: Number(c.calculated_stock ),
+        reels_quota:  Number(c.remaining_preorder_spots ?? 0)
+       ,
       })),
     }))
 
@@ -675,11 +721,23 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
     )
   }
 
-  const handleSave = async () => {
-    try { console.log('handleSave invoked', { id: product.id, name: product.name, images: (product.images || []).length, newImages: newImageFilesState.length }) } catch (e) { /* ignore */ }
+  const isBeforeToday = (d?: string | Date | null) => {
+    if (!d) return false
+    const date = new Date(d)
+    if (Number.isNaN(date.getTime())) return false
+    const today = new Date()
+    today.setHours(0,0,0,0)
+    const cmp = new Date(date)
+    cmp.setHours(0,0,0,0)
+    return cmp < today
+  }
+
+  const performSave = async () => {
     setLoading(true)
     setMessage(null)
     try {
+      try { console.log('performSave invoked', { id: product.id, name: product.name, images: (product.images || []).length, newImages: newImageFilesState.length }) } catch (e) { /* ignore */ }
+
       // Build sku details payload
       const skuData: SkuDetails = {
         SKU: String(product.name),
@@ -710,8 +768,11 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
           id: c.id,
           size: v.size || 'One Size',
           color: c.color || '單色',
-          stock: Number(c.stock || 0),
-          reels_quota: Number(c.reels_quota || 0),
+          // Prefer calculated_stock for payload, fallback to stock
+          stock: Number(c.calculated_stock ?? c.stock ?? 0),
+          reels_quota: Number(c.reels_quota ?? c.raw_quota ?? 0),
+          // Include remaining preorder spots in RPC payload
+          reels_quotas: Number(c.remaining_preorder_spots ?? 0),
           hip: v.hip || '',
           waist: v.waist || '',
           length: v.length || '',
@@ -732,42 +793,35 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
 
       // Send payload to edge function
       try {
-        // Submit directly to the edge function (no debug panel)
-        try {
-          const returned = await submitSkuEdit(
-            skuId,
-            skuData,
-            variationsToSend,
-            keptImages,
-            newImagesForSend,
-            videoFile instanceof File ? videoFile : null,
-            normalizedInitial.rawRpc
-          )
+        const returned = await submitSkuEdit(
+          skuId,
+          skuData,
+          variationsToSend,
+          keptImages,
+          newImagesForSend,
+          videoFile instanceof File ? videoFile : null,
+          normalizedInitial.rawRpc
+        )
 
-          // Revoke object URLs for uploaded files and preview
-          newImageFilesState.forEach((n: any) => {
-            try { URL.revokeObjectURL(n.tempUrl) } catch (e) { /* ignore */ }
-          })
-          try { if (typeof previewUrl === 'string') URL.revokeObjectURL(previewUrl) } catch (e) { /* ignore */ }
-          setNewImageFilesState([])
-          setVideoFile(null)
-          setPreviewUrl(null)
+        // Revoke object URLs for uploaded files and preview
+        newImageFilesState.forEach((n: any) => {
+          try { URL.revokeObjectURL(n.tempUrl) } catch (e) { /* ignore */ }
+        })
+        try { if (typeof previewUrl === 'string') URL.revokeObjectURL(previewUrl) } catch (e) { /* ignore */ }
+        setNewImageFilesState([])
+        setVideoFile(null)
+        setPreviewUrl(null)
 
-          setMessage('更新成功')
-          setIsChanged(false)
-          if (returned?.sku_id && returned.sku_id !== skuId) setProduct(prev => ({ ...prev, id: returned.sku_id }))
-          if (returned?.video_url || returned?.reels_video_url) {
-            const newUrl = returned.video_url || returned.reels_video_url
-            setProduct(prev => ({ ...prev, videoUrl: newUrl, reelsUrl: newUrl }))
-          }
-          try { router.push('/admin/skus') } catch (e) { /* ignore */ }
-          setLoading(false)
-          return
-        } catch (err: any) {
-          setMessage(err?.message || '更新失敗')
+        setMessage('更新成功')
+        setIsChanged(false)
+        if (returned?.sku_id && returned.sku_id !== skuId) setProduct(prev => ({ ...prev, id: returned.sku_id }))
+        if (returned?.video_url || returned?.reels_video_url) {
+          const newUrl = returned.video_url || returned.reels_video_url
+          setProduct(prev => ({ ...prev, videoUrl: newUrl, reelsUrl: newUrl }))
         }
-
-        
+        try { router.push('/admin/skus') } catch (e) { /* ignore */ }
+        setLoading(false)
+        return
       } catch (err: any) {
         setMessage(err?.message || '更新失敗')
       }
@@ -777,6 +831,15 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleSave = async () => {
+    // If SKU date is before today, ask for confirmation
+    if (product.date && isBeforeToday(product.date)) {
+      setPastDateConfirmOpen(true)
+      return
+    }
+    await performSave()
   }
 
   
@@ -950,9 +1013,9 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
                       <th className="p-2"></th>
                       <th className="p-2">顏色</th>
                       <th className="p-2">庫存</th>
-                      <th className="p-2">預售配額</th>
-                      <th className="p-2">訂單鎖定</th>
-                      <th className="p-2">可用庫存</th>
+                      <th className="p-2">剩餘配額</th>
+                      
+                      <th className="p-2">總供應量</th>
                     </tr>
                   </thead>
                    <tbody>
@@ -969,17 +1032,17 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
                               <td className="p-2 align-top">-</td>
                               <td className="p-2 align-top">-</td>
                               <td className="p-2 align-top">-</td>
-                              <td className="p-2 align-top">-</td>
+                             
                               <td className="p-2 align-top">-</td>
                             </tr>
                           )
                         }
 
                         return colorsArr.map((c: any, i: number) => {
-                          const rawStock = (typeof c.raw_stock === 'number') ? c.raw_stock : (c.raw_stock ? Number(c.raw_stock) : '-')
-                          const rawQuota = (typeof c.raw_quota === 'number') ? c.raw_quota : (c.raw_quota ? Number(c.raw_quota) : '-')
-                          const totalLocked = (typeof c.total_locked === 'number') ? c.total_locked : (c.total_locked ? Number(c.total_locked) : '-')
-                          const availableStock = (typeof c.available_stock === 'number') ? c.available_stock : (c.available_stock ? Number(c.available_stock) : '-')
+                          const rawStock = (c.calculated_stock)
+                          const availableQuota = (c.remaining_preorder_spots)
+                          
+                          const availableStock = (c.total_available)
 
                           return (
                             <tr key={`${size}-${c.color || i}`} className="border-t">
@@ -992,15 +1055,15 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
                                 </>
                               )}
                               <td className="p-2">
-                                <div className="flex flex-wrap gap-2">
-                                  <span className="inline-flex items-center gap-2 px-2 py-1 rounded-full text-xs">
-                                    {c.color || '-'}
-                                  </span>
-                                </div>
-                              </td>
+                                    <div className="flex flex-wrap gap-2">
+                                      <span className="inline-flex items-center gap-2 px-2 py-1 rounded-full text-xs">
+                                        {c.color || '-'}
+                                      </span>
+                                    </div>
+                                  </td>
                               <td className="p-2 align-top">{rawStock}</td>
-                              <td className="p-2 align-top">{rawQuota}</td>
-                              <td className="p-2 align-top">{totalLocked}</td>
+                              <td className="p-2 align-top">{availableQuota}</td>
+                             
                               <td className="p-2 align-top">{availableStock}</td>
                             </tr>
                           )
@@ -1087,7 +1150,7 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
                      {imagesArr.map((img, idx) => {
                        const mediaIndex = (product.reelsUrl ? 1 : 0) + idx;
                        return (
-                         <div key={idx} className="relative w-24 h-24 flex-shrink-0 bg-gray-50 rounded-md overflow-hidden group">
+                         <div key={idx} onClick={() => { setFullscreenSrc(img); setFullscreenAlt(`Image ${idx + 1}`); setImageFullscreenOpen(true) }} className="relative w-24 h-24 flex-shrink-0 bg-gray-50 rounded-md overflow-hidden group cursor-pointer">
                            <Image src={img} alt={`Image ${idx + 1}`} fill className="object-cover" />
                            <button onClick={(e) => { e.stopPropagation(); handleRemoveImage(idx); }} className="absolute top-1 right-1 bg-white/90 text-red-600 hover:bg-red-600 hover:text-white p-1 rounded-full shadow-sm opacity-0 group-hover:opacity-100 transition-all z-10">
                              <X className="w-3 h-3" />
@@ -1208,36 +1271,29 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
                         <div className="text-[9px] text-gray-500 mb-1">顏色</div>
                         <Input value={c.color || ''} onChange={e => updateColorField(vi, ci, 'color', e.target.value)} placeholder="顏色" className="text-xs w-14" />
                       </div>
-
+                    <div className="flex flex-col">
+                        <div className="text-[9px] text-gray-500 mb-1">剩餘配額</div>
+                        <Input
+                          value={String(c.remaining_preorder_spots ?? '')}
+                          onChange={e => updateColorField(vi, ci, 'remaining_preorder_spots', Number(e.target.value || 0))}
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          className="text-xs w-10"
+                        />
+                      </div>
                       <div className="flex flex-col">
                         <div className="text-[9px] text-gray-500 mb-1">庫存</div>
-                        <Input
-                          value={String(c.raw_stock ?? c.stock ?? '')}
-                          onChange={e => updateColorField(vi, ci, 'raw_stock', Number(e.target.value || 0))}
-                          type="text"
-                          inputMode="numeric"
-                          pattern="[0-9]*"
-                          className="text-xs w-10"
-                        />
+                        <div className="text-xs">{c.calculated_stock}</div>
                       </div>
 
-                      <div className="flex flex-col">
-                        <div className="text-[9px] text-gray-500 mb-1">預售配額</div>
-                        <Input
-                          value={String(c.reels_quota ?? c.raw_quota ?? '')}
-                          onChange={e => updateColorField(vi, ci, 'reels_quota', Number(e.target.value || 0))}
-                          type="text"
-                          inputMode="numeric"
-                          pattern="[0-9]*"
-                          className="text-xs w-10"
-                        />
-                      </div>
+                      
 
                      
 
                       <div className="flex flex-col">
-                        <div className="text-[9px] text-gray-500 mb-1">訂單鎖定</div>
-                        <div className="text-xs">{typeof c.total_locked !== 'undefined' ? String(c.total_locked) : '-'}</div>
+                        <div className="text-[9px] text-gray-500 mb-1">總供應量</div>
+                        <div className="text-xs">{c.total_available}</div>
                       </div>
 
                      
@@ -1270,12 +1326,26 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
         </DialogContent>
       </Dialog>
 
+      {/* Past-date confirmation Dialog */}
+      <Dialog open={pastDateConfirmOpen} onOpenChange={(v) => { if (!v) setPastDateConfirmOpen(false) }}>
+        <DialogContent className="max-w-sm w-[90vw]">
+          <DialogTitle>注意：落架日期早於今天</DialogTitle>
+          <div className="py-2">
+            <p className="text-xs text-gray-700 mb-4">相關商品不會公開顯示，仍要儲存？</p>
+            <div className="flex justify-end gap-2">
+              <Button size="sm" variant="ghost" onClick={() => setPastDateConfirmOpen(false)}>返回</Button>
+              <Button size="sm" onClick={() => { setPastDateConfirmOpen(false); performSave() }} className="bg-red-600 hover:bg-red-700 text-white">儲存</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Confirm Removal Dialog */}
       <Dialog open={confirmState.open} onOpenChange={(v) => { if (!v) setConfirmState({ open: false }) }}>
         <DialogContent className="max-w-sm w-[90vw]">
           <DialogTitle>確認刪除？</DialogTitle>
           <div className="py-2">
-            <p className="text-sm text-gray-700 mb-4">所有相關記錄包括庫存、配額都會刪除且無法復原。</p>
+            <p className="text-xs text-gray-700 mb-4">所有相關記錄包括庫存、配額都會刪除且無法復原。</p>
             <div className="flex justify-end gap-2">
               <Button size="sm" variant="ghost" onClick={cancelConfirm}>取消</Button>
               <Button size="sm" onClick={confirmRemoval} className="bg-red-600 hover:bg-red-700 text-white">刪除</Button>
@@ -1399,6 +1469,8 @@ export default function SkuEditor({ initialProduct }: SkuEditorProps) {
             </div>
         </DialogContent>
       </Dialog>
+      {/* Image fullscreen portal */}
+      <ImageFullscreen src={fullscreenSrc || ''} alt={fullscreenAlt} open={imageFullscreenOpen} onClose={() => setImageFullscreenOpen(false)} />
     </div>
   )
 }

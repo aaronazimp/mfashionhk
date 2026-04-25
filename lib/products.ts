@@ -9,16 +9,10 @@ export interface SingleSkuImage {
 export interface SingleSkuColor {
   id: number
   color: string
-  // legacy/optional fields
-  stock?: number
-  reels_quota?: number
-
-  // new RPC fields seen in recent responses
-  raw_quota?: number
-  raw_stock?: number
-  total_locked?: number
-  total_supply?: number
-  available_stock?: number
+  raw_quota: number
+  total_available: number
+  calculated_stock: number
+  remaining_preorder_spots: number
 
   [key: string]: any
 }
@@ -136,6 +130,7 @@ export interface PaymentPageItem {
   row_total?: number
   variation?: string | null
   is_in_current_txn?: boolean
+  shipping_surcharge?: number | null
   [key: string]: any
 }
 

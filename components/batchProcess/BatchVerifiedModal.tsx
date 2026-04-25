@@ -3,8 +3,9 @@
 import React from "react"
 import * as Lucide from "lucide-react"
 import OrderCard from "../OrderCard"
+import ImageFullscreen from "../ImageFullscreen"
 import { fetchBulkCustomerOrders, revertAllocatedToConfirmed, reverseConfirmedOrder, bulkVerifyPayments } from "../../lib/orderService"
-import type { ActiveCustomerRecords } from '@/types/order'
+import type { BulkCustomerOrderRecord } from '@/types/order'
 import { useEffect, useMemo, useState } from "react"
 
 type Props = {
@@ -16,7 +17,7 @@ type Props = {
   statusFilter?: string
 }
 
-export default function BatchConfirmModal({
+export default function BatchVerifiedModal({
   open,
   onOpenChange,
   selectedOrderKeys = [],
@@ -25,8 +26,8 @@ export default function BatchConfirmModal({
   statusFilter,
 }: Props) {
   // (removed WhatsApp transaction extraction helper)
-  console.log('BatchConfirmModal render', { open, selectedOrderKeys, customerIds, statusFilter, onConfirmType: typeof onConfirm })
-  const [bulkData, setBulkData] = useState<ActiveCustomerRecords[]>([])
+  console.log('BatchVerifiedModal render', { open, selectedOrderKeys, customerIds, statusFilter, onConfirmType: typeof onConfirm })
+  const [bulkData, setBulkData] = useState<BulkCustomerOrderRecord[]>([])
   const [loading, setLoading] = useState(false)
   // Snapshot of customerIds captured when modal opens. While modal is open we
   // use this snapshot so parent changes don't force refetch/unmount flicker.
@@ -95,39 +96,37 @@ export default function BatchConfirmModal({
   // (removed automatic extraction of transaction ids from bulkData)
 
   const extractedOrderGroups = useMemo(() => {
-    // Show orders for the selected customer only. RPC `orders_by_status` maps status -> { orders: OrderGroup[], status_total?: number }
+    // Map orders for the selected customer using the new `BulkCustomerOrderRecord` shape
     const b = bulkData[currentIndex]
-    const groups = b
-      ? Object.values(b.orders_by_status).flatMap((s: any) => (Array.isArray(s) ? s : s?.orders ?? []))
-      : []
+    if (!b || !Array.isArray(b.transactions) || b.transactions.length === 0) return []
 
-    return groups.map((og: any) => ({
-      order_number: og.order_number,
-      order_total: og.order_total,
-      // include order-level receipt/proof and identifiers from RPC (no fallbacks)
-      payment_proof_url: og.payment_proof_url,
-      transaction_id: og.transaction_id,
-      status: og.status,
-      items: (og.items || []).map((it: any) => ({
-        item_id: it.line_item_id,
-        price: it.price,
-        status: it.status,
-        quantity: it.quantity,
-        sku_code: it.sku_code,
-        sku: it.sku,
-        thumbnail: it.main_image,
-        imageUrl: it.main_image,
-        payment_proof_url: it.payment_proof_url,
-        receipt_url: it.receipt_url,
-        transaction_id: it.transaction_id,
-        // preserve waitlist/preorder flag from RPC so child components can
-        // display a '預購' badge when appropriate
-        is_waitlist_item: it.is_waitlist_item,
-        variation: it.variation_text,
-        remarks: it.remark,
-        payment_deadline: it.payment_deadline,
-      })),
-    }))
+    return b.transactions.flatMap((tx: any) => {
+      const orders = tx.orders || []
+      return orders.map((o: any) => ({
+        order_number: o.order_number,
+        order_total: o.order_total ?? o.order_total_amount ?? o.transaction_total ?? tx.transaction_total ?? 0,
+        payment_proof_url: o.payment_proof_url ?? tx.payment_proof_url ?? null,
+        transaction_id: o.transaction_id ?? tx.transaction_id ?? tx.transaction_group_id ?? null,
+        status: o.order_status ?? o.order_status ?? null,
+        items: (o.items || []).map((it: any) => ({
+          item_id: it.line_item_id ?? it.item_id ?? String(it.id ?? ''),
+          price: it.price ?? it.unit_price ?? 0,
+          status: it.status ?? null,
+          quantity: it.quantity ?? it.qty ?? 0,
+          sku_code: it.sku_code ?? it.sku_code_snapshot ?? undefined,
+          sku: it.sku ?? it.sku_code ?? undefined,
+          thumbnail: it.main_image ?? it.thumbnail ?? it.imageUrl ?? null,
+          imageUrl: it.main_image ?? it.imageUrl ?? it.thumbnail ?? null,
+          payment_proof_url: it.payment_proof_url ?? o.payment_proof_url ?? tx.payment_proof_url ?? null,
+          receipt_url: it.receipt_url ?? null,
+          transaction_id: it.transaction_id ?? o.transaction_id ?? tx.transaction_id ?? null,
+          is_waitlist_item: it.is_waitlist_item ?? it.is_waitlist ?? false,
+          variation: it.variation_text ?? it.variation_snapshot ?? it.variation ?? undefined,
+          remarks: it.remark ?? it.remarks ?? null,
+          payment_deadline: it.payment_deadline ?? it.deadline ?? null,
+        })),
+      }))
+    })
   }, [bulkData, currentIndex])
 
   const totalAmount = useMemo(() => {
@@ -143,11 +142,142 @@ export default function BatchConfirmModal({
     }, 0)
   }, [extractedOrderGroups])
   
+  // Build a per-transaction view from the BulkCustomerOrderRecord `transactions`
+  const extractedTransactions = useMemo(() => {
+    const b = bulkData[currentIndex]
+    if (!b || !Array.isArray(b.transactions) || b.transactions.length === 0) return []
+
+    return b.transactions.map((tx: any) => {
+      const orders = (tx.orders || []).map((o: any) => ({
+        order_number: o.order_number,
+        order_total: o.order_total ?? o.order_total_amount ?? o.transaction_total ?? tx.transaction_total ?? 0,
+        payment_proof_url: o.payment_proof_url ?? tx.payment_proof_url ?? null,
+        transaction_id: o.transaction_id ?? tx.transaction_id ?? tx.transaction_group_id ?? null,
+        status: o.order_status ?? null,
+        items: (o.items || []).map((it: any) => ({
+          item_id: it.line_item_id ?? it.item_id ?? String(it.id ?? ''),
+          price: it.price ?? it.unit_price ?? 0,
+          status: it.status ?? null,
+          quantity: it.quantity ?? it.qty ?? 0,
+          sku_code: it.sku_code ?? it.sku_code_snapshot ?? undefined,
+          sku: it.sku ?? it.sku_code ?? undefined,
+          thumbnail: it.main_image ?? it.thumbnail ?? it.imageUrl ?? null,
+          imageUrl: it.main_image ?? it.imageUrl ?? it.thumbnail ?? null,
+          payment_proof_url: it.payment_proof_url ?? o.payment_proof_url ?? tx.payment_proof_url ?? null,
+          receipt_url: it.receipt_url ?? null,
+          transaction_id: it.transaction_id ?? o.transaction_id ?? tx.transaction_id ?? null,
+          is_waitlist_item: it.is_waitlist_item ?? it.is_waitlist ?? false,
+          variation: it.variation_text ?? it.variation_snapshot ?? it.variation ?? undefined,
+          remarks: it.remark ?? it.remarks ?? null,
+          payment_deadline: it.payment_deadline ?? it.deadline ?? null,
+        })),
+      }))
+
+      const transaction_total = orders.reduce((s: number, o: any) => s + (Number(o.order_total) || 0), 0)
+      const total_items = orders.reduce((s: number, o: any) => s + ((o.items || []).reduce((si: number, it: any) => si + (Number(it.quantity) || 0), 0)), 0)
+      const payment_proof_url = tx.payment_proof_url ?? (orders[0]?.payment_proof_url) ?? null
+      const transaction_id = tx.transaction_id ?? tx.transaction_group_id ?? (orders[0]?.transaction_id) ?? null
+
+      return {
+        transaction_id,
+        payment_proof_url,
+        orders,
+        transaction_total,
+        total_items,
+        raw: tx,
+      }
+    })
+  }, [bulkData, currentIndex])
+
+  // Removed per-transaction expand/collapse state — orders are always shown now.
+
+  async function handleConfirmTransactionForTx(txId: string | null) {
+    if (!txId) {
+      console.warn('handleConfirmTransactionForTx: no txId provided')
+      return
+    }
+    let prevBulk: BulkCustomerOrderRecord[] | null = null
+    try {
+      // Optimistic local removal for snappy UX: remove tx locally and
+      // mark confirmed, then call RPC. Rollback if RPC fails.
+      prevBulk = bulkData
+      setBulkData((bd) => {
+        const copy = bd.map((b) => ({ ...b }))
+        if (copy[currentIndex] && Array.isArray(copy[currentIndex].transactions)) {
+          copy[currentIndex].transactions = copy[currentIndex].transactions.filter((t: any) => t.transaction_id !== txId)
+        }
+        return copy
+      })
+
+      markConfirmed(currentCustomerId, [txId])
+
+      setLoading(true)
+      await bulkVerifyPayments([txId])
+      console.log('bulk verify single tx success', { txId })
+
+      // Advance only when all txs for this customer are confirmed.
+      checkAndAdvanceIfComplete(currentCustomerId)
+    } catch (e) {
+      console.error('confirm single transaction failed', e)
+      // rollback optimistic changes
+      try {
+        if (prevBulk) setBulkData(prevBulk)
+        else if (prevBulkDataRef.current) setBulkData(JSON.parse(prevBulkDataRef.current))
+      } catch (err) {
+        console.error('rollback failed', err)
+      }
+      setConfirmedMap((prev) => {
+        if (!currentCustomerId) return prev
+        const set = new Set<string>(prev[currentCustomerId] ?? [])
+        set.delete(txId as string)
+        return { ...prev, [currentCustomerId]: Array.from(set) }
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
   
   const [showRevertConfirm, setShowRevertConfirm] = useState(false)
   const currentCustomerId = bulkData[currentIndex]?.customer_info?.customer_id ?? null
-  const [ordersExpanded, setOrdersExpanded] = useState<boolean>(true)
   const [batchCompleteOpen, setBatchCompleteOpen] = useState(false)
+  const [fullscreenSrc, setFullscreenSrc] = useState<string | null>(null)
+  // Track confirmed transaction ids per customer so we only advance when
+  // every transaction for a customer has been confirmed.
+  const [confirmedMap, setConfirmedMap] = useState<Record<string, string[]>>({})
+
+  function markConfirmed(customerId: string | null, txIds: string[]) {
+    if (!customerId || txIds.length === 0) return
+    setConfirmedMap((prev) => {
+      const set = new Set<string>(prev[customerId] ?? [])
+      txIds.forEach((id) => id && set.add(id))
+      return { ...prev, [customerId]: Array.from(set) }
+    })
+  }
+
+  function isAllConfirmedForCustomer(customerId: string | null) {
+    if (!customerId) return false
+    const customerRecord = bulkData.find((b) => b?.customer_info?.customer_id === customerId)
+    const expected = (customerRecord?.transactions || []).map((t: any) => t.transaction_id).filter(Boolean)
+    if (expected.length === 0) return false
+    const confirmed = new Set<string>(confirmedMap[customerId] ?? [])
+    return expected.every((id: string) => confirmed.has(id))
+  }
+
+  function checkAndAdvanceIfComplete(customerId: string | null) {
+    if (!customerId) return
+    if (!isAllConfirmedForCustomer(customerId)) return
+
+    const customerIdx = bulkData.findIndex((b) => b?.customer_info?.customer_id === customerId)
+    // If there's another customer after currentIndex, advance to them.
+    if (bulkData.length > 1 && currentIndex < bulkData.length - 1) {
+      setCurrentIndex((i) => Math.min(bulkData.length - 1, i + 1))
+      return
+    }
+
+    // Last customer processed — show completion dialog
+    setBatchCompleteOpen(true)
+  }
   
 
   // (removed WhatsApp message composition and send/resend functions)
@@ -163,12 +293,28 @@ export default function BatchConfirmModal({
   }
 
   async function handleConfirmTransaction() {
+    let prevBulk: BulkCustomerOrderRecord[] | null = null
+    let txs: string[] = []
     try {
       console.log('確認交易 clicked', { customerId: currentCustomerId })
       // collect transaction ids from displayed orders
-      const txs = extractedOrderGroups.flatMap((og: any) => (og.items || []).map((it: any) => it.transaction_id).filter(Boolean))
+      txs = extractedOrderGroups.flatMap((og: any) => (og.items || []).map((it: any) => it.transaction_id).filter(Boolean))
       try {
         if (txs.length > 0) {
+          // Optimistically remove these transactions locally and mark them
+          // confirmed; rollback on RPC failure.
+          prevBulk = bulkData
+          setBulkData((bd) => {
+            const copy = bd.map((b) => ({ ...b }))
+            if (copy[currentIndex] && Array.isArray(copy[currentIndex].transactions)) {
+              const remove = new Set(txs)
+              copy[currentIndex].transactions = copy[currentIndex].transactions.filter((t: any) => !remove.has(t.transaction_id))
+            }
+            return copy
+          })
+
+          markConfirmed(currentCustomerId, txs as string[])
+
           setLoading(true)
           await bulkVerifyPayments(txs as string[])
           console.log('bulk verify success', { txCount: txs.length })
@@ -179,18 +325,24 @@ export default function BatchConfirmModal({
         setLoading(false)
       }
 
-      // After successful verification, auto-advance to next customer or show completion dialog
-      if (bulkData.length > 1 && currentIndex < bulkData.length - 1) {
-        setCurrentIndex((i) => Math.min(bulkData.length - 1, i + 1))
-        // expand orders for next customer by default
-        setOrdersExpanded(true)
-        return
-      }
-
-      // last customer processed — show completion dialog
-      setBatchCompleteOpen(true)
+      // Only advance/show completion when all transactions for this
+      // customer are confirmed.
+      checkAndAdvanceIfComplete(currentCustomerId)
     } catch (e) {
       console.error('confirm transaction failed', e)
+      // rollback optimistic removal and confirmed flags
+      try {
+        if (prevBulk) setBulkData(prevBulk)
+        else if (prevBulkDataRef.current) setBulkData(JSON.parse(prevBulkDataRef.current))
+      } catch (_) {
+        // ignore
+      }
+      setConfirmedMap((prev) => {
+        if (!currentCustomerId) return prev
+        const set = new Set<string>(prev[currentCustomerId] ?? [])
+        txs.forEach((id: string) => set.delete(id))
+        return { ...prev, [currentCustomerId]: Array.from(set) }
+      })
     }
   }
 
@@ -261,111 +413,83 @@ export default function BatchConfirmModal({
 
         {/* Body (scrollable) */}
         <div className="p-6 space-y-4 overflow-auto flex-1">
-          {/* Summary row */}
-          <div className="flex items-center gap-2 text-sm font-bold">
-                  <div className="text-xs">交易編號</div>
-                  <div className="text-xs">{(function(){
-                    try {
-                      const txs = extractedOrderGroups.flatMap((og:any) => (og.items||[]).map((it:any)=>it.transaction_id).filter(Boolean))
-                      return txs.length ? txs[0] : '—'
-                    } catch(e) {
-                      return '—'
-                    }
-                  })()}</div>
-                </div>    
-          <div className="flex items-center justify-between">
-            <div className="flex flex-col gap-2">
-              <div className="text-[10px] text-gray-700">共 {extractedOrderGroups.length} 張訂單 | {totalQuantity} 件商品</div>
-              <div className="text-xs font-semibold">總額 ${totalAmount.toLocaleString()}</div>
-            </div>
+          {/* Transactions list: render one section per transaction id */}
+          {extractedTransactions.length === 0 ? (
+            <div className="text-xs text-center text-gray-500">{loading ? '載入中…' : '沒有選取任何交易'}</div>
+          ) : (
+            <div className="space-y-4">
+              {extractedTransactions.map((tx: any, idx: number) => (
+                <div key={tx.transaction_id ?? idx} className="bg-gray-100 rounded-lg p-3 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex flex-col w-full">
+                      <div className="flex items-center gap-2 text-sm font-bold">
+                        <div className="text-xs">交易編號</div>
+                        <div className="text-xs">{tx.transaction_id ?? '—'}</div>
+                      </div>
+                      <div className="text-[10px] text-gray-700 mt-1">共 {tx.orders.length} 張訂單 | {tx.total_items} 件商品</div>
+                      <div className="flex items-center justify-between mt-2 gap-2 w-full">
+                        <div className="text-xs mt-2 font-semibold">總額 ${Number(tx.transaction_total).toLocaleString()}</div>
+                        <button
+                          className="px-3 py-1.5 rounded bg-primary text-white text-xs"
+                          onClick={() => handleConfirmTransactionForTx(tx.transaction_id)}
+                          disabled={loading}
+                        >
+                          確認交易
+                        </button>
+                      </div>
+                    </div>
 
-              <div>
-                <div className="text-xs text-gray-500">{/* transaction id placeholder */}</div>
-                <div className="mt-2">
-                  <button
-                    className="px-3 py-1.5 rounded bg-primary text-white text-xs"
-                    onClick={handleConfirmTransaction}
-                  >
-                    確認交易
-                  </button>
+                   
+                    
+                  </div>
+                  <div className="mt-4 w-full h-[200px] bg-gray-50 rounded-lg overflow-hidden flex items-center justify-center p-4">
+                    {tx.payment_proof_url ? (
+                      <button
+                        type="button"
+                        onClick={() => setFullscreenSrc(tx.payment_proof_url)}
+                        className="w-full h-full flex items-center justify-center"
+                      >
+                        <img src={tx.payment_proof_url} alt={`receipt-${tx.transaction_id ?? idx}`} className="max-h-[500px] w-auto object-contain" />
+                      </button>
+                    ) : (
+                      <div className="text-sm text-gray-400">無收據圖片</div>
+                    )}
+                  </div>
+
+                  <div className="space-y-3 mt-3">
+                    {tx.orders.map((og: any) => (
+                      <OrderCard key={og.order_number} order={og} className="bg-white rounded-xl shadow max-h-96 overflow-hidden" />
+                    ))}
+                  </div>
                 </div>
-              </div>
-          </div>
-
-          {/* Image container (500px height) - show single image (first item) for current customer */}
-          <div className="mt-4 w-full h-[400px] bg-gray-50 rounded-lg overflow-hidden flex items-center justify-center p-4">
-            {(() => {
-              const firstOrder = extractedOrderGroups[0]
-              const firstItem = firstOrder?.items?.[0] ?? null
-                // Payment proof image is supplied at order level in RPC responses
-                const url = firstOrder?.payment_proof_url ?? firstItem?.payment_proof_url
-              if (url) {
-                return (
-                  <a href={url} target="_blank" rel="noreferrer" className="w-full h-full flex items-center justify-center">
-                    <img src={url} alt={`receipt-${firstItem?.item_id ?? 'img'}`} className="max-h-[500px] w-auto object-contain" />
-                  </a>
-                )
-              }
-              return <div className="text-sm text-gray-400">無收據圖片</div>
-            })()}
-          </div>
-
-          
-
-
-          {/* expand/collapse button placed below image container */}
-          <div className="flex justify-center mt-2">
-            <button
-              className="px-2 py-1 rounded text-xs text-gray-700 font-bold flex items-center"
-              onClick={() => setOrdersExpanded((s) => !s)}
-            >
-              <span>{ordersExpanded ? '收起訂單' : '展開訂單'}</span>
-              {ordersExpanded ? (
-                <Lucide.ChevronUp className="ml-2" size={16} />
-              ) : (
-                <Lucide.ChevronDown className="ml-2" size={16} />
-              )}
-            </button>
-          </div>
-
-          {/* Orders list (expandable whole section) */}
-          {ordersExpanded ? (
-            <div className="space-y-3 mt-3">
-              {extractedOrderGroups.length === 0 ? (
-                <div className="text-xs text-center text-gray-500">{loading ? '載入中…' : '沒有選取任何訂單'}</div>
-              ) : (
-                extractedOrderGroups.map((og) => (
-                  <OrderCard key={og.order_number} order={og} className="bg-white rounded-xl shadow max-h-96 overflow-hidden" />
-                ))
-              )}
+              ))}
             </div>
-          ) : null}
+          )}
+
+          {/*
+            Image fullscreen portal — mount once in this modal so clicks open the viewer
+          */}
+          <ImageFullscreen
+            src={fullscreenSrc ?? ""}
+            alt="receipt"
+            open={Boolean(fullscreenSrc)}
+            onClose={() => setFullscreenSrc(null)}
+          />
 
          
 
-          {/* Action row: Next / Complete */}
-          <div className="mt-3 flex justify-center">
-            {bulkData.length > 1 && currentIndex < bulkData.length - 1 ? (
-              <button
-                className="px-4 py-2 rounded-lg bg-primary text-sm"
-                onClick={() => setCurrentIndex((i) => Math.min(bulkData.length - 1, i + 1))}
-                disabled={loading || currentIndex >= bulkData.length - 1}
-              >
-                下一位顧客
-              </button>
-            ) : null}
-          </div>
+         
 
           {/* Batch complete dialog */}
           {batchCompleteOpen ? (
             <div className="fixed inset-0 z-60 flex items-center justify-center">
               <div className="absolute inset-0 bg-black/40" />
               <div className="relative bg-white rounded-xl shadow-lg p-6 w-[90vw] max-w-[400px] z-70">
-                <div className="text-lg font-semibold mb-2">已完成批次處理</div>
-                <div className="text-sm text-gray-600 mb-4">您已處理完所有顧客。批次流程已完成。</div>
+                <div className="text-sm font-semibold mb-2">已完成批次處理</div>
+                <div className="text-xs text-gray-600 mb-4">您已處理完所有顧客。批次流程已完成。</div>
                 <div className="flex justify-end">
                   <button
-                    className="px-4 py-2 rounded bg-primary text-white"
+                    className="px-4 py-2 rounded bg-primary  text-xs text-white"
                     onClick={() => {
                       setBatchCompleteOpen(false)
                       onOpenChange(false)

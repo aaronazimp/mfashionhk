@@ -7,9 +7,19 @@ import React, { useState, useEffect, useRef } from "react";
 import { useSearchParams, useRouter } from 'next/navigation'
 import * as Lucide from 'lucide-react';
 import { supabase } from "@/lib/supabase";
+import { toast } from '@/hooks/use-toast';
 import { getMasterOrderList } from '@/lib/orderService';
 import { ListStatusLabel, ListStatusBg } from "@/lib/orderStatus";
 import { HeaderTabMenu } from '@/components/header-tab-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from '@/components/ui/dialog';
 import OrderDetailsModalAll from '@/components/order-details-modal-all';
 import BatchConfirmModal from '@/components/batchProcess/BatchConfirmModal';
 import BatchPackingModal from '@/components/batchProcess/BatchPackingModal';
@@ -19,7 +29,7 @@ import BatchShippingModal from '@/components/batchProcess/BatchShippingModal';
 import BatchRestockReminderModal from '@/components/batchProcess/BatchRestockReminderModal';
 import EmptyWidget from '@/components/EmptyWidget';
 import { List, ListItem } from '@/components/ui/list';
-import DebugPanel from '@/components/debug/DebugPanel';
+// DebugPanel removed - debug logging cleaned
 
 export default function OrdersPage() {
   const { loading: countLoading, meta: countMeta, statusCounts } = useFetchOrders('all', 1, 1, false);
@@ -34,6 +44,44 @@ export default function OrdersPage() {
   const [batchModalStatusFilter, setBatchModalStatusFilter] = useState<string | 'all'>('all')
   const searchParams = useSearchParams()
   const router = useRouter()
+
+  const [showSoundDialog, setShowSoundDialog] = useState(false);
+
+  useEffect(() => {
+    try {
+      const interacted = typeof window !== 'undefined' ? localStorage.getItem('orders_audio_dialog_interacted') : null;
+      if (!interacted) {
+        setShowSoundDialog(true);
+      }
+    } catch (e) {}
+  }, []);
+
+  // If the user previously enabled audio, try to initialize the audio element
+  useEffect(() => {
+    try {
+      const enabled = typeof window !== 'undefined' ? localStorage.getItem('orders_audio_enabled') : null;
+      if (enabled) {
+        try {
+          const w: any = window as any;
+          if (!w.__orders_alert_audio) {
+            const a = new Audio('/audioefx.mp3');
+            a.preload = 'auto';
+            a.volume = 0.8;
+            // attempt to play/pause to unlock on some browsers; if it fails still keep reference
+            a.play().then(() => {
+              try { a.pause(); a.currentTime = 0; } catch (e) {}
+              w.__orders_alert_audio = a;
+            }).catch((err) => {
+              // play may fail without user gesture; still keep the element so future user gesture can unlock
+              try { w.__orders_alert_audio = a; } catch (e) {}
+            });
+          }
+        } catch (e) {
+          console.warn('init orders audio failed', e);
+        }
+      }
+    } catch (e) {}
+  }, []);
 
   // Open batch modal when URL contains modal/status params (e.g. from OrderDetails navigation)
   useEffect(() => {
@@ -63,78 +111,259 @@ export default function OrdersPage() {
       router.replace(url.pathname + url.search)
     } catch (e) {}
   }, [searchParams?.toString()])
-  
 
-  
-  
+  // subscribe to realtime changes on `reels_orders` and trigger a refresh
   useEffect(() => {
-    // subscribe to realtime changes on `reels_orders` and trigger a refresh
-    console.log('setting up reels_orders subscription', { supabaseExists: !!supabase });
     try {
-      const channel = supabase.channel('reels-order-listener');
-      try {
-        // log any existing channels (if API available)
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore
-        console.log('supabase.getChannels?', typeof supabase.getChannels === 'function' ? supabase.getChannels() : 'no-getChannels');
-      } catch (e) {
-        console.warn('could not call getChannels()', e);
-      }
-      channel.on('postgres_changes', { event: '*', schema: 'public', table: 'reels_orders' }, (payload) => {
-        console.log('reels_orders change received', payload);
-        try {
-          const p: any = payload || {}
-          // Attempt to extract relevant identifiers
-          const maybeItemId = p?.new?.id ?? p?.old?.id ?? p?.record?.id ?? null
-          const maybeCustomerId = p?.new?.customer_id ?? p?.old?.customer_id ?? p?.new?.customer ?? null
+      const w: any = window as any;
+      // ensure fetcher list exists
+      if (!w.__orders_fetchers) w.__orders_fetchers = [];
 
-          // Previously suppression checks prevented realtime-driven refreshes
-          // for specific item ids or modal-open customers. Those checks were
-          // removed so the UI receives live updates immediately.
-
-          // Dispatch orders:refresh for all realtime events so the UI stays
-          // fully in sync with DB changes (previously some updates were
-          // filtered out as "non-meaningful").
-          window.dispatchEvent(new CustomEvent('orders:refresh', { detail: payload }))
-        } catch (e) {
-          console.warn('orders:refresh dispatch failed', e)
-        }
-      })
-
-      try {
-        (async () => {
+      // define a persistent payload handler on window so HMR/remounts reuse it
+      if (!w.__orders_handlePayload) {
+        w.__orders_handlePayload = (payload: any) => {
           try {
-            const res = await channel.subscribe();
-            console.log('reels-order-listener subscribe result', res);
-            if ((res as any)?.error) {
-              console.error('reels-order-listener subscribe error', (res as any).error);
+            const raw: any = payload || {};
+            const rawType = (raw.type ?? raw.eventType ?? raw.event ?? '').toString();
+            const normalized = {
+              ...raw,
+              eventType: raw.eventType ?? raw.type ?? raw.event,
+              type: raw.type ?? raw.eventType ?? raw.event,
+              event: raw.event ?? raw.type ?? raw.eventType,
+              typeNormalized: rawType ? rawType.toUpperCase() : '',
+            } as any;
+            const immediate = (normalized.typeNormalized || '').toUpperCase() === 'INSERT';
+            const detail = { ...normalized, immediate };
+
+            try { window.dispatchEvent(new CustomEvent('orders:refresh', { detail })); } catch (e) {}
+
+            const callFetchers = () => {
+              try {
+                const fns = (w.__orders_fetchers && Array.isArray(w.__orders_fetchers)) ? w.__orders_fetchers.filter((fn: any) => typeof fn === 'function') : [];
+                if (fns.length) {
+                  console.info('orders: invoking fetchers', fns.map((fn: any) => (fn && fn.__orders_fetcher_id) || (fn && fn.name) || String(fn).slice(0, 40)));
+                  fns.forEach((fn: any) => {
+                    try { fn(); } catch (e) { console.error('orders: fetcher error', (fn && fn.__orders_fetcher_id) || fn, e); }
+                  });
+                  return true;
+                }
+              } catch (e) { console.warn('orders: callFetchers failure', e); }
+              return false;
+            };
+
+            let invokedNow = false;
+            try { invokedNow = !!callFetchers(); } catch (e) { invokedNow = false; }
+            if (!invokedNow) {
+              let attempts = 0;
+              const retry = () => {
+                attempts++;
+                if (callFetchers()) return;
+                if (attempts < 5) setTimeout(retry, 200);
+              };
+              setTimeout(retry, 200);
             }
-          } catch (err) {
-            console.error('reels-order-listener subscribe threw', err);
+
+            try {
+              const audioEnabled = typeof window !== 'undefined' ? !!localStorage.getItem('orders_audio_enabled') : false;
+              w.__orders_last_refresh_info = {
+                ts: Date.now(),
+                immediate: !!immediate,
+                typeNormalized: normalized.typeNormalized ?? null,
+                fetchersCount: (w.__orders_fetchers && Array.isArray(w.__orders_fetchers)) ? w.__orders_fetchers.length : 0,
+                fetchersInvokedImmediate: !!invokedNow,
+                audioEnabled: audioEnabled,
+                audioPresent: !!(w.__orders_alert_audio),
+              };
+            } catch (e) {
+              try { w.__orders_last_refresh_info = null; } catch (ee) {}
+            }
+
+            if (immediate) {
+              try {
+                let a = w.__orders_alert_audio;
+                try {
+                  const enabled = typeof window !== 'undefined' ? localStorage.getItem('orders_audio_enabled') : null;
+                  if (!a && enabled) {
+                    a = new Audio('/audioefx.mp3');
+                    a.preload = 'auto';
+                    a.volume = 0.8;
+                    // attempt to unlock by playing/pausing once
+                    a.play().then(() => { try { a.pause(); a.currentTime = 0; } catch (e) {} }).catch(() => {});
+                    w.__orders_alert_audio = a;
+                  }
+                } catch (e) {}
+
+                if (a && typeof a.play === 'function') {
+                  try { a.currentTime = 0; a.play().catch((err: any) => console.warn('audio play failed', err)); } catch (e) { console.warn('audio play error', e); }
+                }
+              } catch (e) {}
+            }
+          } catch (e) {
+            try { window.dispatchEvent(new CustomEvent('orders:refresh', { detail: payload })); } catch (err) {}
           }
-        })();
-      } catch (err) {
-        console.error('reels-order-listener subscribe error', err);
+        };
       }
 
-      return () => {
+      // subscribe once per window session (persist across HMR)
+      if (!w.__orders_supabase_subscribed) {
         try {
-          channel.unsubscribe();
-          console.log('reels-order-listener unsubscribed');
+          const channel = supabase.channel('reels-order-listener');
+          channel.on('postgres_changes', { event: '*', schema: 'public', table: 'reels_orders' }, (payload: any) => {
+            try { (window as any).__orders_handlePayload(payload); } catch (e) {}
+          });
+          channel.subscribe((status: string, err?: Error) => {
+            if (status === 'SUBSCRIBED') {
+              w.__orders_supabase_subscribed = true;
+              w.__orders_supabase_channel = channel;
+              console.info('orders: realtime subscribed');
+              try {
+                w.__orders_force_resubscribe = async () => {
+                  try {
+                    console.info('orders: force resubscribe triggered');
+                    try {
+                      if (w.__orders_supabase_channel && typeof w.__orders_supabase_channel.unsubscribe === 'function') {
+                        try { await w.__orders_supabase_channel.unsubscribe(); } catch (e) { /* ignore */ }
+                      }
+                    } catch (e) {}
+                    w.__orders_supabase_subscribed = false;
+                    w.__orders_supabase_channel = null;
+                    const ch = supabase.channel('reels-order-listener-' + Date.now());
+                    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'reels_orders' }, (payload: any) => {
+                      try { (window as any).__orders_handlePayload(payload); } catch (e) {}
+                    });
+                    ch.subscribe((s: string, e?: Error) => {
+                      if (s === 'SUBSCRIBED') {
+                        w.__orders_supabase_subscribed = true;
+                        w.__orders_supabase_channel = ch;
+                        console.info('orders: force resubscribe succeeded');
+                      } else if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT') {
+                        console.warn('orders: force resubscribe failed', s, e);
+                      }
+                    });
+                  } catch (e) {
+                    console.warn('orders: force resubscribe error', e);
+                  }
+                };
+              } catch (e) {}
+            } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+              console.error('reels-order-listener subscribe error', status, err);
+              w.__orders_supabase_subscribed = false;
+            } else if (status === 'CLOSED') {
+              w.__orders_supabase_subscribed = false;
+            }
+          });
         } catch (err) {
-          console.warn('failed to unsubscribe reels-order-listener', err);
+          console.error('reels-order-listener setup failed', err);
         }
-      };
+      }
+
+      // Robustness: if subscription isn't active, retry periodically (survives transient failures)
+      try {
+        if (!w.__orders_sub_retry_started) {
+          w.__orders_sub_retry_started = true;
+          let attempts = 0;
+          const maxAttempts = 20;
+          const retryInterval = 3000;
+          const retryId = setInterval(async () => {
+            try {
+              attempts++;
+              if (w.__orders_supabase_subscribed) {
+                clearInterval(retryId);
+                w.__orders_sub_retry_started = false;
+                return;
+              }
+              if (attempts > maxAttempts) {
+                clearInterval(retryId);
+                w.__orders_sub_retry_started = false;
+                console.warn('orders: giving up subscribing after max attempts');
+                return;
+              }
+
+              // Try to (re)create the channel and subscribe
+              try {
+                if (!w.__orders_sub_retry_pending) {
+                  w.__orders_sub_retry_pending = true;
+                  const ch = supabase.channel('reels-order-listener-retry-' + Date.now());
+                  ch.on('postgres_changes', { event: '*', schema: 'public', table: 'reels_orders' }, (payload: any) => {
+                    try { (window as any).__orders_handlePayload(payload); } catch (e) {}
+                  });
+                  ch.subscribe((s: string, e?: Error) => {
+                    w.__orders_sub_retry_pending = false;
+                    if (s === 'SUBSCRIBED') {
+                      w.__orders_supabase_subscribed = true;
+                      w.__orders_supabase_channel = ch;
+                      clearInterval(retryId);
+                      w.__orders_sub_retry_started = false;
+                      console.info('orders: realtime subscribed on retry');
+                    } else if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT') {
+                      console.warn('orders: retry subscribe failed', s, e);
+                    }
+                  });
+                }
+              } catch (e) {
+                w.__orders_sub_retry_pending = false;
+                // swallow and retry
+              }
+            } catch (e) {
+              // ignore retry loop errors
+            }
+          }, retryInterval);
+          // run immediate attempt
+          (async () => {})();
+        }
+      } catch (e) {}
+
+      // keep subscription global; no local cleanup (persist across HMR)
     } catch (err) {
       console.error('failed to setup reels_order subscription', err);
     }
   }, []);
 
+  
+
   return (
     <div className="h-screen bg-white text-[#111827] overflow-auto flex flex-col p-4 pt-16 pb-28 w-full">
             <div className="mb-4">
-        <HeaderTabMenu active="orders" />
-      </div>
+              <HeaderTabMenu active="orders" />
+            </div>
+
+            <Dialog open={showSoundDialog} onOpenChange={(o) => { if (!o) setShowSoundDialog(false); }}>
+              <DialogContent className="max-w-[420px]">
+                <DialogHeader>
+                  <DialogTitle className="text-sm">啟用聲音提示？</DialogTitle>
+                  <DialogDescription className="text-xs text-gray-600">當有新訂單時，系統會播放短音效提示。此動作需要您的授權，點選「啟用」嘗試播放測試音效。</DialogDescription>
+                </DialogHeader>
+
+                <DialogFooter className="flex justify-end gap-2 mt-4">
+                  <Button className="text-xs" variant="outline" onClick={() => {
+                    try {
+                      try { localStorage.setItem('orders_audio_dialog_interacted', '1'); } catch (e) {}
+                    } catch (e) {}
+                    setShowSoundDialog(false);
+                  }}>不，謝謝</Button>
+
+                  <Button className="text-xs" onClick={async () => {
+                    try {
+                      try { localStorage.setItem('orders_audio_dialog_interacted', '1'); } catch (e) {}
+                      const a = new Audio('/audioefx.mp3');
+                      a.preload = 'auto';
+                      a.volume = 0.8;
+                      try {
+                        await a.play();
+                        (window as any).__orders_alert_audio = a;
+                        try { localStorage.setItem('orders_audio_enabled', '1'); } catch (e) {}
+                      } catch (playErr) {
+                        console.warn('Audio play failed during enable', playErr);
+                      }
+                    } catch (e) {
+                      console.error('enable audio failed', e);
+                    } finally {
+                      setShowSoundDialog(false);
+                    }
+                  }}>啟用</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
 
       <div className="mb-4">
         <div className="w-full mt-0">
@@ -190,7 +419,7 @@ export default function OrdersPage() {
         </div>
       </div>
 
-
+      
       
       <OrderDetailsModalAll open={modalOpen} onOpenChange={(v: boolean) => { setModalOpen(v); if (!v) { setModalCustomerId(null); setModalPriorityStatus(null); } }} customerId={modalCustomerId} priorityStatus={modalPriorityStatus} />
 
@@ -207,7 +436,7 @@ export default function OrdersPage() {
         selectedOrderKeys={batchModalSelectedOrderKeys}
         customerIds={batchModalCustomerIds}
         statusFilter={batchModalStatusFilter}
-        onConfirm={(selected) => { console.log('confirmed batch for', selected); setBatchModalSelectedOrderKeys([]); setBatchModalCustomerIds([]); setBatchModalOpenTop(false); }}
+        onConfirm={(selected) => { setBatchModalSelectedOrderKeys([]); setBatchModalCustomerIds([]); setBatchModalOpenTop(false); }}
       />
 
       <BatchPackingModal
@@ -223,7 +452,7 @@ export default function OrdersPage() {
         selectedOrderKeys={batchModalSelectedOrderKeys}
         customerIds={batchModalCustomerIds}
         statusFilter={batchModalStatusFilter}
-        onConfirm={(selected) => { console.log('packed batch for', selected); setBatchModalSelectedOrderKeys([]); setBatchModalCustomerIds([]); setBatchModalOpenTop(false); }}
+        onConfirm={(selected) => { setBatchModalSelectedOrderKeys([]); setBatchModalCustomerIds([]); setBatchModalOpenTop(false); }}
       />
 
       <BatchPaymentReminderModal
@@ -239,7 +468,7 @@ export default function OrdersPage() {
         selectedOrderKeys={batchModalSelectedOrderKeys}
         customerIds={batchModalCustomerIds}
         statusFilter={batchModalStatusFilter}
-        onConfirm={(selected) => { console.log('sent reminders for', selected); setBatchModalSelectedOrderKeys([]); setBatchModalCustomerIds([]); setBatchModalOpenTop(false); }}
+        onConfirm={(selected) => { setBatchModalSelectedOrderKeys([]); setBatchModalCustomerIds([]); setBatchModalOpenTop(false); }}
       />
 
       <BatchRestockReminderModal
@@ -255,7 +484,7 @@ export default function OrdersPage() {
         selectedOrderKeys={batchModalSelectedOrderKeys}
         customerIds={batchModalCustomerIds}
         statusFilter={batchModalStatusFilter}
-        onConfirm={(selected) => { console.log('sent restock notices for', selected); setBatchModalSelectedOrderKeys([]); setBatchModalCustomerIds([]); setBatchModalOpenTop(false); }}
+        onConfirm={(selected) => { setBatchModalSelectedOrderKeys([]); setBatchModalCustomerIds([]); setBatchModalOpenTop(false); }}
       />
 
       <BatchVerifiedModal
@@ -271,7 +500,7 @@ export default function OrdersPage() {
         selectedOrderKeys={batchModalSelectedOrderKeys}
         customerIds={batchModalCustomerIds}
         statusFilter={batchModalStatusFilter}
-        onConfirm={(selected) => { console.log('verified batch for', selected); setBatchModalSelectedOrderKeys([]); setBatchModalCustomerIds([]); setBatchModalOpenTop(false); }}
+        onConfirm={(selected) => { setBatchModalSelectedOrderKeys([]); setBatchModalCustomerIds([]); setBatchModalOpenTop(false); }}
       />
 
       <BatchShippingModal
@@ -287,9 +516,10 @@ export default function OrdersPage() {
         selectedOrderKeys={batchModalSelectedOrderKeys}
         customerIds={batchModalCustomerIds}
         statusFilter={batchModalStatusFilter}
-        onConfirm={(selected) => { console.log('shipped batch for', selected); setBatchModalSelectedOrderKeys([]); setBatchModalCustomerIds([]); setBatchModalOpenTop(false); }}
+        onConfirm={(selected) => { setBatchModalSelectedOrderKeys([]); setBatchModalCustomerIds([]); setBatchModalOpenTop(false); }}
       />
-      <DebugPanel />
+      
+      
     </div>
   );
 }
@@ -434,7 +664,25 @@ function useFetchOrders(statusFilter: string | 'all', page: number, perPage: num
   useEffect(() => {
     mountedRef.current = true;
     fetchData();
-    return () => { mountedRef.current = false; };
+    try {
+      // register this fetchData globally so realtime publisher can call it
+      const w: any = window as any;
+      w.__orders_fetchers = w.__orders_fetchers || [];
+      // attach a stable id to the fetcher for debugging
+      try { if (!(fetchData as any).__orders_fetcher_id) (fetchData as any).__orders_fetcher_id = 'f_' + Math.random().toString(36).slice(2, 8); } catch (e) {}
+      if (!w.__orders_fetchers.includes(fetchData)) w.__orders_fetchers.push(fetchData);
+    } catch (e) {}
+
+    return () => {
+      mountedRef.current = false;
+      try {
+        const w: any = window as any;
+        if (w.__orders_fetchers && Array.isArray(w.__orders_fetchers)) {
+          const idx = w.__orders_fetchers.indexOf(fetchData);
+          if (idx > -1) w.__orders_fetchers.splice(idx, 1);
+        }
+      } catch (e) {}
+    };
   }, [statusFilter, page, perPage, urgentOnly]);
 
   useEffect(() => {
@@ -442,7 +690,54 @@ function useFetchOrders(statusFilter: string | 'all', page: number, perPage: num
     // cause UI flicker (modal unmount/remount or content reloading).
     let timer: ReturnType<typeof setTimeout> | null = null;
     const handler = (ev: Event) => {
-      // If multiple events arrive quickly, wait 700ms after the last one.
+      try {
+        const d: any = (ev as CustomEvent).detail || {};
+        // If publisher flagged this as immediate (e.g. an INSERT), fetch now.
+        const isInsert = d?.immediate || (d?.typeNormalized || '').toUpperCase() === 'INSERT';
+        if (isInsert) {
+          try {
+            try {
+              const a: any = (window as any).__orders_alert_audio;
+              if (a && typeof a.play === 'function') {
+                try {
+                  a.currentTime = 0;
+                  a.play().catch((err: any) => console.warn('audio play failed', err));
+                } catch (e) {
+                  console.warn('audio play error', e);
+                }
+              }
+            } catch (e) {
+              console.warn('no alert audio available', e);
+            }
+
+            try {
+              try {
+                // Prefer explicit `customer_name` fields from common payload shapes.
+                const owner = d?.new?.customer_name ?? d?.record?.customer_name ?? d?.payload?.new?.customer_name ?? d?.customer_name ?? null;
+                const ownerName = owner ? String(owner) : null;
+                // Only show toast when we have a customer_name; remove generic fallback.
+                if (ownerName) {
+                  const title = `恭喜! 你有一張新訂單`;
+                  toast({
+                    title,
+                    description: (
+                      <span className="text-xs">來自: {ownerName}</span>
+                    ),
+                    open: true,
+                  });
+                }
+              } catch (e) {}
+            } catch (e) {}
+
+            fetchData();
+          } catch (e) {
+            console.warn('immediate fetchData failed', e);
+          }
+          return;
+        }
+      } catch (e) {}
+
+      // Debounce non-immediate events: wait 700ms after the last one.
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         fetchData();
@@ -461,7 +756,6 @@ function useFetchOrders(statusFilter: string | 'all', page: number, perPage: num
 }
 
 function CustomerList({ statusFilter, page, perPage, onPageChange, onOpenCustomer, onOpenBatch }: { statusFilter: string | 'all'; page: number; perPage: number; onPageChange: (p: number) => void; onOpenCustomer: (id: string) => void; onOpenBatch?: (keys: string[], custIds: string[], status: string | 'all') => void }) {
-  console.log('CustomerList render', { statusFilter, page, perPage })
   const [showUnder4Only, setShowUnder4Only] = useState<boolean>(false);
   const { loading, data, meta } = useFetchOrders(statusFilter, page, perPage, showUnder4Only);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -568,19 +862,20 @@ function CustomerList({ statusFilter, page, perPage, onPageChange, onOpenCustome
         }, 0)).toLocaleString()
 
         // compute earliest payment deadline across this customer's orders (check item-level deadlines)
-        const paymentDeadlines = (cust.orders || []).flatMap((o: any) => (o.items || []).map((it: any) => it.payment_deadline || it.deadline).filter(Boolean))
-        let formattedDeadline = null
-        let hoursRemainingText = null
+        const paymentDeadlines = (cust.orders || []).flatMap((o: any) => (o.items || []).map((it: any) => it.payment_deadline || it.deadline).filter(Boolean));
+        let formattedDeadline: string | null = null;
+        let hoursRemainingText: string | null = null;
         if (paymentDeadlines.length > 0) {
-          const parsed = paymentDeadlines.map((d: string) => Date.parse(d)).filter((t: number) => !isNaN(t))
+          const parsed = paymentDeadlines.map((d: string) => Date.parse(d)).filter((t: number) => !isNaN(t));
           if (parsed.length > 0) {
-            const earliest = Math.min(...parsed)
-            formattedDeadline = new Date(earliest).toLocaleString()
-            const hoursRemaining = Math.max(0, Math.ceil((earliest - Date.now()) / (1000 * 60 * 60)))
-            hoursRemainingText = `${hoursRemaining}`
+            const earliest = Math.min(...parsed);
+            formattedDeadline = new Date(earliest).toLocaleString();
+            // compute hours remaining and use at least 1 hour to avoid "0 小時"
+            const hoursRemaining = Math.max(1, Math.ceil((earliest - Date.now()) / (1000 * 60 * 60)));
+            hoursRemainingText = `${hoursRemaining}`;
           }
         }
-        const deadlineText = formattedDeadline && hoursRemainingText ? `還有 ${hoursRemainingText} 小時（截止： ${formattedDeadline}）` : `請於12小時內完成`
+        const deadlineText = formattedDeadline && hoursRemainingText ? `還有 ${hoursRemainingText} 小時（截止： ${formattedDeadline}）` : `請於12小時內完成`;
 
         // build exact requested template for single-customer quick message
         const hoursText = hoursRemainingText ?? '12'
@@ -629,7 +924,7 @@ function CustomerList({ statusFilter, page, perPage, onPageChange, onOpenCustome
       return;
     }
 
-    console.log('customer action for', cust.customer_id, 'selected orders:', selected);
+    
   };
 
   const actionLabel = (() => {
@@ -667,7 +962,7 @@ function CustomerList({ statusFilter, page, perPage, onPageChange, onOpenCustome
         if (onOpenBatch) onOpenBatch(selected.length ? selected : selected, customerIdsForModal, statusFilter)
         return;
       }
-    console.log('bulk action', actionLabel, selected);
+    
   };
 
   // ListStatusLabel and ListStatusBg are imported from lib/orderStatus
