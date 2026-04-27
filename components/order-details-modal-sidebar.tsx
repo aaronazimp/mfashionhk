@@ -13,7 +13,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { OrderStatusBadge } from './OrderCard'
 import { Spinner } from '@/components/ui/spinner'
-import type { Item, Order, ActiveCustomerRecords, RpcResponse } from '@/types/order'
+import type { Item, Order, RpcResponse } from '@/types/order'
 
 type Props = {
   open: boolean
@@ -24,7 +24,7 @@ type Props = {
 
 export default function OrderDetailsModal({ open, onOpenChange, customerId, p_priority_status }: Props) {
   const [loading, setLoading] = useState(false)
-  const [payload, setPayload] = useState<ActiveCustomerRecords | RpcResponse | null>(null)
+  const [payload, setPayload] = useState<RpcResponse | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -123,15 +123,19 @@ export default function OrderDetailsModal({ open, onOpenChange, customerId, p_pr
 
             const statusPriority = Array.from(new Set(blocks.map((b: any) => b.dominant_status).filter(Boolean)))
 
+            const blocksTotal = (blocks || []).reduce((s: number, b: any) => s + (Number(b?.block_total ?? 0) || 0), 0)
             const normalized: RpcResponse = {
               orders,
               // Keep `customer_info` for components that expect it
               customer_info: resp.customer_info,
               whatsapp: resp.customer_info?.phone,
               customer_name: resp.customer_info?.customer_name,
+              // Prefer server summary total if present, otherwise fall back to summed block totals
               grand_total_items: resp.summary?.total_active_items,
-              grand_total_amount: resp.summary?.total_active_price,
+              grand_total_amount: (resp.summary?.total_active_price || blocksTotal),
               total_orders_count: resp.summary?.total_action_blocks,
+              // Preserve raw action_blocks so callers can access group_id/block_total
+              action_blocks: resp.action_blocks,
               summary: resp.summary,
               status_priority: statusPriority,
             }
@@ -168,7 +172,7 @@ export default function OrderDetailsModal({ open, onOpenChange, customerId, p_pr
           // ignore debug errors
         }
 
-        setPayload(resp as ActiveCustomerRecords)
+        setPayload(resp as RpcResponse)
       } catch (err) {
         console.error('get_customer_active_orders rpc error', err)
         setPayload(null)
@@ -219,6 +223,10 @@ export default function OrderDetailsModal({ open, onOpenChange, customerId, p_pr
   const grand_total_amount = (payload && (payload as any).grand_total_amount != null)
     ? (payload as any).grand_total_amount
     : derivedOrders.reduce((s, o) => s + (o.order_total_amount ?? o.order_total ?? 0), 0)
+  // Prefer action_blocks[].block_total when present (newer RPC shape)
+  const actionBlockTotals: number[] = (payload?.action_blocks || []).map((b: any) => Number(b?.block_total ?? 0) || 0)
+  const actionBlocksTotal = actionBlockTotals.reduce((s, v) => s + v, 0)
+  const displayedTotal = actionBlocksTotal > 0 ? actionBlocksTotal : grand_total_amount
   const grand_total_items = derivedOrders.reduce((s, o) => s + (o.order_total_items ?? 0), 0)
   const total_orders_count = derivedOrders.length
   const waitlistTotal = derivedOrders
@@ -251,39 +259,31 @@ export default function OrderDetailsModal({ open, onOpenChange, customerId, p_pr
     return s === 'waitlist' || s === 'pending'
   }
 
-  const statusSummaryText = (() => {
-    if (!payload || derivedOrders.length === 0) return null
-    const counts: Record<string, number> = {}
-    // Count only non-waitlist orders for the summary
-    derivedOrders.forEach((o) => {
-      if (isWaitlist(o.order_status)) return
-      const lbl = getStatusLabel(o.order_status)
-      if (!lbl) return
-      counts[lbl] = (counts[lbl] || 0) + 1
-    })
-    const parts = Object.entries(counts).map(([lbl, cnt]) => `還有 ${cnt}張${lbl}訂單需要處理`)
-    return parts.length > 0 ? parts.join('  ') : null
-  })()
-
   // Show all derived orders (remove client-side waitlist-only filter)
   const allOrders = derivedOrders
+
+  // Derive a comma-joined transaction string from action_blocks.group_id
+  const transactionIds = Array.from(new Set((payload?.action_blocks || []).map((b: any) => b?.group_id).filter(Boolean)))
+  const transactionText = transactionIds.length > 0 ? transactionIds.join(', ') : null
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className=" p-0 gap-0 w-full max-w-[90vw] flex flex-col overflow-auto">
-        <DialogTitle className="text-sm text-center font-semibold px-4 py-3">訂單明細</DialogTitle>
+        <DialogTitle className="text-xs text-center font-semibold px-4 py-3">訂單明細</DialogTitle>
 
         <div className="bg-white z-10 border-b border-gray-100 px-4 py-4 relative">
           <div className="flex flex-col items-start gap-1">
+            {transactionText ? (
+              <div className="text-xs text-black font-bold">交易號碼: {transactionText}</div>
+            ) : null}
             <div className="min-w-0">
-              <div className="text-sm font-bold">顧客: {payload?.customer_info?.customer_name ?? '—'}</div>
+              <div className="text-xs font-bold">顧客: {payload?.customer_info?.customer_name ?? '—'}</div>
             </div>
-            <div className="text-sm text-gray-700">聯絡電話: {payload?.customer_info?.phone ?? '—'}</div>
+            <div className="text-xs text-gray-700">聯絡電話: {payload?.customer_info?.phone ?? '—'}</div>
           </div>
           {/* debug panel removed */}
           <div className="mt-3 flex items-start justify-between gap-4 w-full">
-            <div className="text-xs font-medium flex-1 ">{statusSummaryText}</div>
-            <div className="font-semibold ml-4">總額: ${grand_total_amount ?? 0}</div>
+            <div className="text-xs">總額: ${displayedTotal ?? 0}</div>
           </div>
         </div>
 

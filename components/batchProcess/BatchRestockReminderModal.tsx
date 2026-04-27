@@ -191,8 +191,8 @@ export default function BatchConfirmModal({
   const hasTransactionForCurrent = Boolean(lastNotifiedCustomerId && lastNotifiedCustomerId === currentCustomerId && lastNotifiedTransactionId)
 
   useEffect(() => {
-    const name = bulkData[currentIndex]?.customer_info.customer_name ?? "客戶"
-    const whatsapp = bulkData[currentIndex]?.customer_info.phone ?? ""
+    const name = bulkData[currentIndex]?.customer_info?.customer_name ?? "客戶"
+    const whatsapp = bulkData[currentIndex]?.customer_info?.phone ?? ""
     const flattenedOrders = transactionsMapped.flatMap((t: any) => t.orders || [])
     const orderNumbers = flattenedOrders.map((o: any) => o.order_number).join(", ")
     const numOrders = flattenedOrders.length
@@ -259,7 +259,7 @@ export default function BatchConfirmModal({
   function handleResend() {
     // open WhatsApp again with the current prefillMessage (which should include tx and pay link)
     try {
-      const phone = (bulkData[currentIndex]?.customer_info.phone || "").replace(/[^0-9+]/g, "")
+      const phone = ((bulkData[currentIndex]?.customer_info?.phone) || "").replace(/[^0-9+]/g, "")
       if (!phone) {
         console.warn('handleResend: no phone available for current customer', { currentIndex, bulkDataEntry: bulkData[currentIndex] })
         return

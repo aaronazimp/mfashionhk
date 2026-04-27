@@ -818,10 +818,10 @@ export default function BatchConfirmModal({
 
           <div className="mt-2 flex items-center gap-3 justify-center">
             <div className="text-xs font-semibold">
-              {displayedBulkData[currentIndex]?.customer_info.customer_name ?? "—"}
+              {displayedBulkData[currentIndex]?.customer_info?.customer_name ?? "—"}
             </div>
             <div className="text-xs font-semibold text-gray-700">|</div>
-            <div className="text-xs font-semibold">{displayedBulkData[currentIndex]?.customer_info.phone ?? "—"}</div>
+            <div className="text-xs font-semibold">{displayedBulkData[currentIndex]?.customer_info?.phone ?? "—"}</div>
           </div>
         </div>
 

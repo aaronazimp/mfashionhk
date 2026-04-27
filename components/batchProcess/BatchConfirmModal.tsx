@@ -167,8 +167,8 @@ export default function BatchConfirmModal({
   const hasTransactionForCurrent = Boolean(lastNotifiedCustomerId && lastNotifiedCustomerId === currentCustomerId && lastNotifiedTransactionId)
 
   useEffect(() => {
-    const name = bulkData[currentIndex]?.customer_info.customer_name ?? "客戶"
-    const whatsapp = bulkData[currentIndex]?.customer_info.phone ?? ""
+    const name = bulkData[currentIndex]?.customer_info?.customer_name ?? "客戶"
+    const whatsapp = bulkData[currentIndex]?.customer_info?.phone ?? ""
     const orderNumbers = extractedOrderGroups.map((o: any) => o.order_number).join(", ")
     const numOrders = extractedOrderGroups.length
     const total = totalAmount ? totalAmount.toLocaleString() : "0"
@@ -247,7 +247,7 @@ export default function BatchConfirmModal({
       setPrefillMessage(msgWithTx)
 
       // Open WhatsApp with message containing transaction id and payment link
-      const phone = (bulkData[currentIndex]?.customer_info.phone || "").replace(/[^0-9+]/g, "")
+      const phone = ((bulkData[currentIndex]?.customer_info?.phone) || "").replace(/[^0-9+]/g, "")
       if (phone && typeof window !== "undefined") {
         const url = `https://wa.me/${phone.replace(/^\+/, "")}?text=${encodeURIComponent(msgWithTx)}`
         window.open(url, "_blank")
@@ -263,7 +263,7 @@ export default function BatchConfirmModal({
 
   function handleResend() {
     // open WhatsApp again with the current prefillMessage (which should include tx and pay link)
-    const phone = (bulkData[currentIndex]?.customer_info.phone || "").replace(/[^0-9+]/g, "")
+    const phone = ((bulkData[currentIndex]?.customer_info?.phone) || "").replace(/[^0-9+]/g, "")
     if (!phone) return
     const msg = prefillMessage
     if (typeof window !== "undefined") {
@@ -330,10 +330,10 @@ export default function BatchConfirmModal({
 
           <div className="mt-2 flex items-center gap-3 justify-center">
             <div className="text-xs font-semibold">
-              {bulkData[currentIndex]?.customer_info.customer_name ?? "—"}
+              {bulkData[currentIndex]?.customer_info?.customer_name ?? "—"}
             </div>
             <div className="text-xs font-semibold text-gray-700">|</div>
-            <div className="text-xs font-semibold">{bulkData[currentIndex]?.customer_info.phone ?? "—"}</div>
+            <div className="text-xs font-semibold">{bulkData[currentIndex]?.customer_info?.phone ?? "—"}</div>
           </div>
         </div>
 

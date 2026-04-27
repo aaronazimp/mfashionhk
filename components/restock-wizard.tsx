@@ -126,6 +126,8 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
   const [rpcPayload, setRpcPayload] = useState<any | null>(null);
   const [showRpcDebug, setShowRpcDebug] = useState<boolean>(false);
   const [showPayloadDebug, setShowPayloadDebug] = useState<boolean>(false);
+  const [showProcessResult, setShowProcessResult] = useState<boolean>(false);
+  const [lastProcessResult, setLastProcessResult] = useState<any | null>(null);
   const [lastPayloadToSend, setLastPayloadToSend] = useState<any[] | null>(null);
 
   useEffect(() => {
@@ -151,6 +153,7 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
     setRestockAmounts({});
     setRestockPayloadMap({});
     setPreviewImage(null);
+    setLastProcessResult(null);
     setLoadingData(false);
   };
 
@@ -363,6 +366,8 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
       setLastPayloadToSend(payloadToSend);
 
       const data = await processBulkRestock(payloadToSend);
+      // expose raw RPC result to debug panel
+      setLastProcessResult(data);
       // map returned latest stock into our rows for the confirmation step
       try {
       let payloadResult: any = data;
@@ -370,26 +375,37 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
       else if (data && data.process_bulk_restock) payloadResult = data.process_bulk_restock;
 
       if (Array.isArray(payloadResult)) {
-          const latestMap: Record<string, number | undefined> = {};
-          const quotaMap: Record<string, number | undefined> = {};
+          // Build a map of the RPC result by variation id for easy merging
+          const resultMap: Record<string, any> = {};
           for (const it of payloadResult) {
             const vid = String(it.variation_id ?? it.variationId ?? it.id ?? "");
-            // server may return latest stock under several names; try common alternatives
-            const stockVal = it.latest_stock ?? it.latestStock ?? it.latest ?? it.current_stock ?? it.currentStock ?? it.currentQty ?? it.current_qty;
-            latestMap[vid] = stockVal !== undefined && stockVal !== null ? Number(stockVal) : undefined;
-            const quotaVal = it.current_quota ?? it.currentQuota ?? it.latest_quota ?? it.quota;
-            quotaMap[vid] = quotaVal !== undefined && quotaVal !== null ? Number(quotaVal) : undefined;
+            resultMap[vid] = it;
           }
-          
+
           setRows((prev) => prev.map((r) => {
-            const hasStock = Object.prototype.hasOwnProperty.call(latestMap, r.id) && latestMap[r.id] !== undefined;
-            const hasQuota = Object.prototype.hasOwnProperty.call(quotaMap, r.id) && quotaMap[r.id] !== undefined;
+            const res = resultMap[r.id];
+            if (!res) return r;
+
+            // Normalize returned fields (prefer explicit RPC names provided)
+            const rawStock = res.raw_stock ?? res.rawStock ?? res.latest_stock ?? res.latestStock ?? res.current_stock ?? res.currentStock ?? res.currentQty ?? res.current_qty;
+            const rawQuota = res.raw_quota ?? res.rawQuota ?? res.current_quota ?? res.currentQuota ?? res.latest_quota ?? res.quota;
+            const calcStock = res.calculated_stock ?? res.calculatedStock ?? res.total_available ?? res.totalAvailable ?? rawStock;
+            const remainingPreorder = res.remaining_preorder_spots ?? res.remainingPreorderSpots ?? res.remaining_preorder ?? res.remaining;
+
             return {
               ...r,
-              currentQty: hasStock ? (latestMap[r.id] as number) : r.currentQty,
-              current_stock: hasStock ? (latestMap[r.id] as number) : r.current_stock,
-              current_quota: hasQuota ? (quotaMap[r.id] as number) : r.current_quota,
-              calculated_stock: hasStock ? (latestMap[r.id] as number) : (r.calculated_stock ?? r.current_stock ?? r.currentQty ?? 0),
+              size: res.size ?? r.size,
+              color: res.color ?? r.color,
+              sku_id: res.sku_id ?? res.skuId ?? r.sku_id,
+              raw_quota: rawQuota !== undefined ? Number(rawQuota) : r.raw_quota,
+              raw_stock: rawStock !== undefined ? Number(rawStock) : r.raw_stock,
+              total_available: (res.total_available ?? res.totalAvailable) !== undefined ? Number(res.total_available ?? res.totalAvailable) : r.total_available,
+              total_waitlist_orders: (res.total_waitlist_orders ?? res.totalWaitlistOrders) !== undefined ? Number(res.total_waitlist_orders ?? res.totalWaitlistOrders) : r.total_waitlist_orders,
+              remaining_preorder_spots: remainingPreorder !== undefined ? Number(remainingPreorder) : r.remaining_preorder_spots,
+              calculated_stock: calcStock !== undefined ? Number(calcStock) : (r.calculated_stock ?? r.current_stock ?? r.currentQty ?? 0),
+              current_stock: rawStock !== undefined ? Number(rawStock) : r.current_stock,
+              currentQty: rawStock !== undefined ? Number(rawStock) : r.currentQty,
+              current_quota: rawQuota !== undefined ? Number(rawQuota) : r.current_quota,
             };
           }));
         }
@@ -909,10 +925,10 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
                                   <div className="text-[10px] text-gray-700">{r.remaining_preorder_spots}</div>
                                 </td>
                                 <td className="py-2 text-right">
-                                  <div className="text-[10px]">{Number(restockAmounts[r.id] ?? 0) + Number(r.calculated_stock)}</div>
+                                  <div className="text-[10px]">{Number(r.calculated_stock)}</div>
                                 </td>
                                 <td className="py-2 text-right font-bold">
-                                  <div className="text-[10px]">{Number(restockAmounts[r.id] ?? 0) +Number(r.remaining_preorder_spots) + Number( r.calculated_stock)}</div>
+                                  <div className="text-[10px]">{Number(r.remaining_preorder_spots) + Number( r.calculated_stock)}</div>
                                 </td>
                               </tr>
                           ))}
@@ -949,6 +965,14 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
             >
               {showPayloadDebug ? '隱藏 payloadToSend' : '顯示 payloadToSend'}
             </button>
+
+            <button
+              type="button"
+              className="text-xs text-gray-500 underline"
+              onClick={() => setShowProcessResult((s) => !s)}
+            >
+              {showProcessResult ? '隱藏 processBulkRestock 回傳' : '顯示 processBulkRestock 回傳'}
+            </button>
           </div>
 
           {showRpcDebug && (
@@ -962,6 +986,12 @@ export default function RestockWizard({ isOpen, onClose, sku = "R20260305M02", i
               <pre className="whitespace-pre-wrap break-words">{JSON.stringify(lastPayloadToSend, null, 2)}</pre>
             </div>
           )}
+
+            {showProcessResult && (
+              <div className="mt-2 max-h-64 overflow-auto text-xs bg-gray-100 p-2 rounded">
+                <pre className="whitespace-pre-wrap break-words">{JSON.stringify(lastProcessResult, null, 2)}</pre>
+              </div>
+            )}
         </div>
 
         <AlertDialogFooter />

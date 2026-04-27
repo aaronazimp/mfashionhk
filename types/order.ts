@@ -73,6 +73,11 @@ export interface RestockVariation {
   current_stock: number
   // SKU id for this variation (RPC)
   sku_id?: number
+  // optional raw/quota fields returned by processBulkRestock
+  raw_quota?: number
+  raw_stock?: number
+  total_available?: number
+  total_waitlist_orders?: number
   // number of items ordered for this variation (RPC)
   ordered_qty?: number
   // aggregated orders count for this variation (RPC)
@@ -283,8 +288,8 @@ export interface BulkCustomerOrderRecord {
   orders_by_status?: Record<string, any>
 }
 
-// Backwards-compatible alias: some components import `ActiveCustomerRecords`
-export type ActiveCustomerRecords = BulkCustomerOrderRecord
+// Backwards-compatible alias: map `ActiveCustomerRecords` to the newer `RpcResponse`
+export type ActiveCustomerRecords = RpcResponse
 
 
 
@@ -380,9 +385,9 @@ export type RpcResponse = {
   action_blocks?: any[]
   summary?: any
   customer_info?: {
-    phone?: string
-    customer_id?: string
-    customer_name?: string
+    phone?: string | null
+    customer_id?: string | null
+    customer_name?: string | null
   }
   whatsapp?: string
   customer_name?: string
@@ -393,6 +398,9 @@ export type RpcResponse = {
   // optional ordering/priority list from RPC
   status_priority?: string[]
   total_orders_count?: number
+  // some RPC responses (bulk endpoints) include transaction lists
+  transactions?: Transaction[]
+  [key: string]: any
 }
 
 /**

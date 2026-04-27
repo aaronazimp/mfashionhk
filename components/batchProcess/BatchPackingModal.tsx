@@ -491,10 +491,10 @@ export default function BatchVerifiedModal({
 
           <div className="mt-2 flex items-center gap-3 justify-center">
             <div className="text-xs font-semibold">
-              {bulkData[currentIndex]?.customer_info.customer_name ?? "—"}
+              {bulkData[currentIndex]?.customer_info?.customer_name ?? "—"}
             </div>
             <div className="text-xs font-semibold text-gray-700">|</div>
-            <div className="text-xs font-semibold">{bulkData[currentIndex]?.customer_info.phone ?? "—"}</div>
+            <div className="text-xs font-semibold">{bulkData[currentIndex]?.customer_info?.phone ?? "—"}</div>
           </div>
           {batchCompleteOpen ? (
             <div className="absolute inset-0 z-60 flex items-center justify-center pointer-events-none">
